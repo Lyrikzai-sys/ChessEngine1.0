@@ -575,18 +575,44 @@ function minimax(s: GameState, depth: number, alpha: number, beta: number, persp
   }
 }
 
-export function findBestMove(s: GameState, elo: number = 1200): Move | null {
-  const moves = generateLegalMoves(s);
-  if (moves.length === 0) return null;
-  const perspective = s.turn;
-  let depth = 1, blunderChance = 0;
+/** Below this the engine only stumbles into castling and en passant. */
+export const FULL_RULES_ELO = 1250;
+
+export interface Strength {
+  /** Plies of search. */
+  depth: number;
+  /** Chance the engine takes a weaker move than the one it found. */
+  blunderChance: number;
+  /** Whether castling and en passant are reliably available to it. */
+  knowsFullRules: boolean;
+}
+
+/**
+ * What a rating actually buys.
+ *
+ * Exported so the interface can describe a difficulty setting from the same
+ * numbers the search uses, rather than restating them and drifting out of
+ * step the next time a band moves.
+ */
+export function describeStrength(elo: number): Strength {
+  let depth = 1;
+  let blunderChance = 0;
   if (elo < 800)       { depth = 1; blunderChance = 0.4; }
   else if (elo < 1200) { depth = 2; blunderChance = 0.2; }
   else if (elo < 1600) { depth = 3; blunderChance = 0.1; }
   else if (elo < 2000) { depth = 3; blunderChance = 0.05; }
   else                 { depth = 4; blunderChance = 0; }
+  return { depth, blunderChance, knowsFullRules: elo >= FULL_RULES_ELO };
+}
 
-  // Below 1250 the engine does not reliably know castling or en passant, so
+export function findBestMove(s: GameState, elo: number = 1200): Move | null {
+  const moves = generateLegalMoves(s);
+  if (moves.length === 0) return null;
+  const perspective = s.turn;
+  const { depth, blunderChance } = describeStrength(elo);
+
+  // Below FULL_RULES_ELO the engine does not reliably know castling or en
+  // passant, so
   // it only plays them when it has seen them before or stumbles into one.
   // This is what makes weak play read as inexperience rather than as a
   // shallower search.
@@ -594,7 +620,7 @@ export function findBestMove(s: GameState, elo: number = 1200): Move | null {
   const knownMoves: MoveKind[] = (s as unknown as { knownMoves?: MoveKind[] }).knownMoves || [];
   const filteredMoves = moves.filter(m => {
     if (!isSecretKind(m.kind)) return true;
-    if (elo >= 1250) return true;
+    if (elo >= FULL_RULES_ELO) return true;
     if (knownMoves.includes(m.kind)) return true;
     return Math.random() < 0.15;
   });

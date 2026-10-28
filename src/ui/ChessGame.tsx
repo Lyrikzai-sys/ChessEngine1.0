@@ -15,6 +15,13 @@ import { CAPTURE_DEMOS, stagedPosition } from '../captureDemos';
 import { searchBestMove } from '../searchClient';
 import { Board } from './Board';
 import { BURST_SECONDS, VoxelExplosion, WeaponStrike } from './CombatEffects';
+import {
+  DifficultyPanel,
+  CheckBadge,
+  ResultBanner,
+  StatusBar,
+  isOver,
+} from './GameOverlay';
 import { VoxelPiece } from './VoxelPiece';
 
 type Square = [number, number];
@@ -33,8 +40,9 @@ type CaptureSequence = {
  * A playable board. You are white; the engine answers in a Web Worker so the
  * scene keeps rendering while it searches.
  */
-export function ChessGame({ elo = 1200 }: { elo?: number }) {
+export function ChessGame({ elo: initialElo = 1200 }: { elo?: number }) {
   const [state, setState] = useState<GameState>(() => createInitialState('standard'));
+  const [elo, setElo] = useState(initialElo);
   const [selected, setSelected] = useState<[number, number] | null>(null);
   const [thinking, setThinking] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -47,6 +55,20 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
 
   const commitMove = useCallback((move: Move) => {
     setState((current) => applyMove(current, move));
+    setResolving(false);
+  }, []);
+
+  const newGame = useCallback(() => {
+    // Pending timers belong to a capture in the old game; left running they
+    // would commit a move into the new one.
+    timers.current.forEach((timer) => window.clearTimeout(timer));
+    timers.current = [];
+    completedCaptureId.current = null;
+
+    setState(createInitialState('standard'));
+    setSelected(null);
+    setCapture(null);
+    setThinking(false);
     setResolving(false);
   }, []);
 
@@ -122,7 +144,9 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
   );
 
   const humanColor: Color = 'w';
-  const isHumanTurn = !resolving && state.turn === humanColor && state.status !== 'checkmate' && state.status !== 'stalemate';
+  // `isOver` covers draws too. Checking only checkmate and stalemate here
+  // left a drawn game still accepting moves.
+  const isHumanTurn = !resolving && state.turn === humanColor && !isOver(state.status);
 
   const onSelect = useCallback(
     (r: number, c: number) => {
@@ -164,7 +188,7 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
   useEffect(() => {
     if (resolving) return;
     if (state.turn === humanColor) return;
-    if (state.status === 'checkmate' || state.status === 'stalemate' || state.status === 'draw') return;
+    if (isOver(state.status)) return;
 
     let cancelled = false;
     setThinking(true);
@@ -274,6 +298,9 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
       </Canvas>
 
       <StatusBar state={state} thinking={thinking} resolving={resolving} />
+      <CheckBadge state={state} hidden={!!capture} />
+      <DifficultyPanel elo={elo} onChange={setElo} disabled={resolving} />
+      <ResultBanner state={state} onNewGame={newGame} />
       <button
         type="button"
         onClick={previewCapture}
@@ -289,34 +316,3 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
     </div>
   );
 }
-
-function StatusBar({ state, thinking, resolving }: { state: GameState; thinking: boolean; resolving: boolean }) {
-  const text = (() => {
-    if (state.status === 'checkmate') return state.winner === 'w' ? 'Checkmate. You win.' : 'Checkmate. The engine wins.';
-    if (state.status === 'stalemate') return 'Stalemate.';
-    if (state.status === 'draw') return 'Draw.';
-    if (resolving) return 'Resolving capture…';
-    if (thinking) return 'Thinking…';
-    if (state.status === 'check') return state.turn === 'w' ? 'You are in check.' : 'The engine is in check.';
-    return state.turn === 'w' ? 'Your move. Click a piece, then a highlighted square.' : 'Engine to move.';
-  })();
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        padding: '12px 16px',
-        font: '13px/1.5 ui-sans-serif, system-ui, sans-serif',
-        color: '#cbd5e1',
-        background: 'linear-gradient(transparent, rgba(0,0,0,.65))',
-        pointerEvents: 'none',
-      }}
-    >
-      {text}
-    </div>
-  );
-}
-
