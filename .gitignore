@@ -6,6 +6,7 @@ coverage/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# releases/ is deliberately NOT ignored: the packaged Windows installer and
-# the standalone exe are committed so the repository carries something
-# runnable. Rust build output under src-tauri/target/ stays ignored.
+# Packaged binaries are published as GitHub Release assets, not committed.
+# An unsigned .exe in git history is ~11MB that can never be taken out of a
+# clone, and a lean source tree reads better than an unknown executable.
+releases/

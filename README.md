@@ -30,8 +30,8 @@ Then open the address Vite prints (`http://localhost:5173` by default).
 
 ### Desktop
 
-Prebuilt Windows binaries are in [`releases/`](releases/) — an installer, and
-an executable that runs without installing. Neither is code-signed, so
+Prebuilt Windows binaries — an installer and a standalone executable — are
+attached to the [Releases](../../releases) page. Neither is code-signed, so
 SmartScreen will warn on first run.
 
 To build it yourself:
@@ -41,7 +41,7 @@ npm run tauri build
 ```
 
 This needs the Rust toolchain and, on Windows, MSVC. See
-[`releases/README.md`](releases/README.md) for a toolchain trap worth knowing
+[`docs/BUILDING.md`](docs/BUILDING.md) for a toolchain trap worth knowing
 about before you spend an afternoon on it.
 
 ## Playing
