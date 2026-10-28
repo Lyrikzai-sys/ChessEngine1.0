@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PieceType } from '../src/engine';
-import { weaponModel } from '../src/voxel/weapons';
+import {
+  RELEASE_AT,
+  STRIKE_SECONDS,
+  WEAPON_STYLE,
+  projectileModel,
+  weaponModel,
+} from '../src/voxel/weapons';
 import { meshVoxels, voxelCount } from '../src/voxel/voxelMesh';
 
 const TYPES: PieceType[] = ['P', 'R', 'N', 'B', 'Q', 'K'];
@@ -17,7 +23,7 @@ describe('voxel weapons', () => {
       for (const color of ['w', 'b'] as const) {
         const model = weaponModel(type, color);
 
-        expect(voxelCount(model), `${type}${color} is empty`).toBeGreaterThan(80);
+        expect(voxelCount(model), `${type}${color} is empty`).toBeGreaterThan(150);
         for (let i = 1; i < model.cells.length; i += 2) {
           expect(model.cells[i]).toBeLessThan(model.palette.length);
         }
@@ -62,5 +68,39 @@ describe('voxel weapons', () => {
   it('returns the cached model rather than rebuilding it per frame', () => {
     expect(weaponModel('Q', 'w')).toBe(weaponModel('Q', 'w'));
     expect(weaponModel('Q', 'w')).not.toBe(weaponModel('Q', 'b'));
+  });
+});
+
+describe('strike styles', () => {
+  it('gives every piece a style, and every style a timing', () => {
+    for (const type of TYPES) {
+      const style = WEAPON_STYLE[type];
+      expect(style, `${type} has no strike style`).toBeDefined();
+      expect(STRIKE_SECONDS[style], `${style} has no duration`).toBeGreaterThan(0);
+      // The weapon has to be released before the blow lands, or the payload
+      // never travels and the strike reads as a teleport.
+      expect(RELEASE_AT[style]).toBeGreaterThan(0);
+      expect(RELEASE_AT[style]).toBeLessThan(1);
+    }
+  });
+
+  it('arms only the two pieces that throw something', () => {
+    for (const type of TYPES) {
+      for (const color of ['w', 'b'] as const) {
+        const shot = projectileModel(type, color);
+        if (type === 'R' || type === 'B') {
+          expect(shot, `${type} should have a projectile`).not.toBeNull();
+          expect(voxelCount(shot!)).toBeGreaterThan(40);
+        } else {
+          expect(shot, `${type} should strike with the weapon itself`).toBeNull();
+        }
+      }
+    }
+  });
+
+  it('keeps the strike snappy enough to play through', () => {
+    for (const style of Object.values(WEAPON_STYLE)) {
+      expect(STRIKE_SECONDS[style], `${style} drags`).toBeLessThanOrEqual(0.5);
+    }
   });
 });

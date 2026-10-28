@@ -11,9 +11,10 @@ import {
   createInitialState,
   legalMovesFromSquare,
 } from '../engine';
+import { CAPTURE_DEMOS, stagedPosition } from '../captureDemos';
 import { searchBestMove } from '../searchClient';
 import { Board } from './Board';
-import { VoxelExplosion, WeaponStrike } from './CombatEffects';
+import { BURST_SECONDS, VoxelExplosion, WeaponStrike } from './CombatEffects';
 import { VoxelPiece } from './VoxelPiece';
 
 type Square = [number, number];
@@ -40,6 +41,7 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
   const [capture, setCapture] = useState<CaptureSequence | null>(null);
   const timers = useRef<number[]>([]);
   const completedCaptureId = useRef<number | null>(null);
+  const demoIndex = useRef(0);
 
   useEffect(() => () => timers.current.forEach((timer) => window.clearTimeout(timer)), []);
 
@@ -100,12 +102,12 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
     return () => window.clearTimeout(timer);
   }, [capture, onImpact]);
 
-  // Rapier contact is authoritative for starting the burst. The visual's
-  // frame callback normally completes it at 0.68s; this only protects a move
-  // if a browser pauses that callback during a WebGL or tab lifecycle event.
+  // The burst completes itself from its own frame callback. This only covers
+  // the case where a browser pauses that callback partway through, during a
+  // WebGL context loss or a tab lifecycle event.
   useEffect(() => {
     if (!capture?.exploded) return;
-    const timer = window.setTimeout(() => completeCapture(capture), 1_000);
+    const timer = window.setTimeout(() => completeCapture(capture), BURST_SECONDS * 1000 + 400);
     return () => window.clearTimeout(timer);
   }, [capture, completeCapture]);
 
@@ -142,14 +144,14 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
   const previewCapture = useCallback(() => {
     if (resolving || thinking) return;
 
-    // A legal e4 / d5 position keeps the combat presentation inspectable
-    // without a reviewer having to play several opening moves first.
-    let preview = createInitialState('standard');
-    const whiteAdvance = legalMovesFromSquare(preview, [6, 4]).find((move) => move.to?.[0] === 4 && move.to?.[1] === 4)!;
-    preview = applyMove(preview, whiteAdvance);
-    const blackAdvance = legalMovesFromSquare(preview, [1, 3]).find((move) => move.to?.[0] === 3 && move.to?.[1] === 3)!;
-    preview = applyMove(preview, blackAdvance);
-    const captureMove = legalMovesFromSquare(preview, [4, 4]).find((move) => move.to?.[0] === 3 && move.to?.[1] === 3)!;
+    // Cycle the demos so every weapon can be seen in turn, rather than only
+    // whichever piece a reviewer happened to trade first.
+    const demo = CAPTURE_DEMOS[demoIndex.current % CAPTURE_DEMOS.length];
+    demoIndex.current++;
+
+    const preview = stagedPosition(demo);
+    const captureMove = legalMovesFromSquare(preview, demo.attackerSquare)
+      .find((move) => move.to?.[0] === demo.victimSquare[0] && move.to?.[1] === demo.victimSquare[1])!;
 
     setState(preview);
     setSelected(null);
@@ -265,6 +267,7 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
             type={capture.victim.type}
             color={capture.victim.color}
             square={capture.target}
+            from={capture.from}
             onComplete={() => completeCapture(capture)}
           />
         )}
