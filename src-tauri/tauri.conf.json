@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sacred Chess",
+  "version": "1.0.0",
+  "identifier": "com.lyrikzai.sacredchess",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --port 1420",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Sacred Chess",
+        "width": 1280,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 680
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

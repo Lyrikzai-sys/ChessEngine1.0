@@ -6,5 +6,6 @@ coverage/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# Packaged installers are build products, not source.
-releases/
+# releases/ is deliberately NOT ignored: the packaged Windows installer and
+# the standalone exe are committed so the repository carries something
+# runnable. Rust build output under src-tauri/target/ stays ignored.
