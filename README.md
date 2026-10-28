@@ -67,7 +67,7 @@ of the position. Measured on a middlegame position, worst of five runs:
 |---|---|---|---|---|
 | 600 | 60 ms | 1 | 1 | 9 ms |
 | 1000 | 100 ms | 2 | 2 | 59 ms |
-| 1400 | 900 ms | 7 | 3 | 910 ms |
+| 1400 | 440 ms | 7 | pending re-measurement | — |
 | 1800 | 1250 ms | 8 | 3 | 1260 ms |
 | 2200 | 1700 ms | 9 | 3 | 1711 ms |
 
@@ -127,6 +127,7 @@ A setting labelled 1200 that scores 0.02 against a 1200 opponent is not a
 | raised budget to 900 ms, depth cap 7, blunder rate to 2.5% | 16 | 4W–12L | 0.25 |
 | dropped the full-rules threshold from 1250 to 800 | 7 | 1W–6L | 0.14 |
 | added a bounded capture-only quiescence search | 10 | **7W–3L** | **0.70** |
+| final 1200 parity retune: 440 ms / 8.5% weak-move rate | 14 | **8W–6L** | **0.57** |
 
 Quiescence was the one that mattered. The search stopped at depth zero and
 evaluated positions mid-exchange, so the engine would happily walk into the
@@ -135,8 +136,9 @@ quiet position took the band from losing nearly every game to winning most.
 
 Read these honestly:
 
-- **Small samples.** Ten to fifty completed games. A 0.70 score over ten games
-  has wide error bars; it shows the collapse is fixed, not that the number is
+- **Small samples.** Ten to fifty completed games. The first 0.70 score over ten games
+  has wide error bars; the final 0.57 score over fourteen games is nearer parity,
+  but still not precise. Both results show the collapse is fixed, not that the number is
   precise.
 - **Fast time control**, chosen so a full series finishes in minutes. Results
   would differ at tournament time controls.

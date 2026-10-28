@@ -93,7 +93,10 @@ not see the end of, which is exactly the mistake that makes an engine feel
 weak rather than merely shallow.
 
 Searching captures — and all evasions when in check — out to a quiet position
-took the band from **0.02 to 0.70** against the same probe.
+first took the band from **0.02 to 0.70** against the same probe. The 0.70
+result was then deliberately retuned down: the current 1200 setting uses a
+440 ms budget and 8.5% weak-move rate, scoring **8W–6L (0.57)** over fourteen
+completed games against the same probe.
 
 What this does not prove: the samples are ten to fifty games at a fast time
 control, and the figure is relative to one engine configuration, not a human

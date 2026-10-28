@@ -659,7 +659,8 @@ export function describeStrength(elo: number): Strength {
   else if (elo < 1200) { depth = 2; budgetMs = 100;  blunderChance = 0.2; }
   // Calibrated against limited-strength Stockfish and Fairy-Stockfish. The
   // previous 1200 band (depth 4 / 180ms / 10% random move) scored near zero.
-  else if (elo < 1600) { depth = 7; budgetMs = 900;   blunderChance = 0.025; }
+  // Its first quiescence retest overshot 50%; this budget targets parity.
+  else if (elo < 1600) { depth = 7; budgetMs = 440;   blunderChance = 0.085; }
   else if (elo < 2000) { depth = 8; budgetMs = 1250;  blunderChance = 0.01; }
   else                 { depth = 9; budgetMs = 1700;  blunderChance = 0; }
   return { depth, budgetMs, blunderChance, knowsFullRules: elo >= FULL_RULES_ELO };
