@@ -12,7 +12,7 @@ import {
 } from '../engine';
 import { searchBestMove } from '../searchClient';
 import { Board } from './Board';
-import { Piece3D } from './Pieces';
+import { BoardModel, Piece3D } from './Pieces';
 
 /**
  * A playable board. You are white; the engine answers in a Web Worker so the
@@ -128,6 +128,7 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
 
         <Suspense fallback={null}>
           <Environment preset="studio" environmentIntensity={0.8} />
+          <BoardModel />
           <Board selected={selected} validSquares={validSquares} onSelect={onSelect} />
           {pieces.map(({ key, r, c, type }) => (
             <Piece3D
