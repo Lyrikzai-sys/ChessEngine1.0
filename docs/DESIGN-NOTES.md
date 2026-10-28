@@ -39,6 +39,38 @@ panel describes the engine from the same numbers the search uses. Two copies
 of that table would drift, and the interface would start quietly lying about
 what the setting does.
 
+## Response time is a promise, not an outcome
+
+The search used to run to one fixed depth, which made how long it thought a
+property of the position. On an ordinary middlegame board the top rating took
+about **seven seconds** — long enough that the game looks broken and the player
+clicks again.
+
+It now deepens iteratively against a wall-clock budget: search one ply, then
+two, keeping the best move from the last pass that *finished*, and stop when
+the budget is spent. A partially searched depth is discarded whole, because
+its moves were scored against an incomplete window and the best of them is not
+the best move.
+
+Worst case went from ~7,000 ms to ~517 ms.
+
+Two details that are easy to get wrong:
+
+- **Re-searching shallower depths is not waste.** Each pass leaves the root
+  moves ordered best-first for the next, and alpha-beta prunes far harder
+  against a good first guess. Ordering by the previous pass is most of why
+  this is affordable.
+- **The deadline is sampled, and the interval has to suit the engine.**
+  Reading the clock every node costs more than the work between nodes. The
+  first version sampled every 1024 nodes — but this engine only manages a few
+  thousand nodes a second, so one gap was ~200 ms, and a 180 ms budget
+  overran to 281 ms. Sampling every 64 nodes bounds the overrun to one small
+  batch without making timer reads dominate the search.
+
+The honest trade: bounded latency costs depth. The strongest setting reaches
+three plies in 500 ms where it used to reach four in seven seconds. A
+transposition table would buy that ply back and is the obvious next move.
+
 ## Pieces are generated, not loaded
 
 No model files ship. Each piece is built by filling a sparse voxel grid in

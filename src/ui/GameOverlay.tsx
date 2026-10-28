@@ -159,14 +159,15 @@ export function DifficultyPanel({
   onChange: (elo: number) => void;
   disabled: boolean;
 }) {
-  const { depth, blunderChance, knowsFullRules } = describeStrength(elo);
+  const { depth, budgetMs, blunderChance, knowsFullRules } = describeStrength(elo);
 
   // The full description is what the rating actually buys, but it is three
   // lines of prose and the board needs the width more than the reader does.
   // It moves into the tooltip; the strip keeps only what changes at a glance.
   const summary = [
     `Engine strength ${elo}`,
-    `Searches ${depth} ${depth === 1 ? 'ply' : 'plies'} ahead`,
+    `Thinks for up to ${budgetMs}ms`,
+    `Searches up to ${depth} ${depth === 1 ? 'ply' : 'plies'} ahead`,
     blunderChance > 0
       ? `Plays a weaker move ${Math.round(blunderChance * 100)}% of the time`
       : 'Always plays the best move it finds',
@@ -223,7 +224,7 @@ export function DifficultyPanel({
       <span
         style={{ font: `10px ${FONT}`, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}
       >
-        {depth}-ply
+        {budgetMs}ms
       </span>
       {!knowsFullRules && <span style={{ font: `10px ${FONT}`, color: '#fbbf24' }}>basic</span>}
     </div>

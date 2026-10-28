@@ -552,8 +552,27 @@ export function explainEvaluation(s: GameState, perspective: Color): EvalBreakdo
   };
 }
 
+/**
+ * Thrown to unwind the search when the time budget is spent.
+ *
+ * A sentinel rather than a return value because every frame of minimax would
+ * otherwise need to distinguish "this position scores zero" from "stop", and
+ * one missed check silently returns a bogus score as if it were real.
+ */
+const SEARCH_ABORTED = Symbol('search-aborted');
+
+let deadline = Infinity;
+
+const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
 function minimax(s: GameState, depth: number, alpha: number, beta: number, perspective: Color): number {
   nodeCount++;
+  // Sampled rather than checked every node, because the clock read costs more
+  // than the work between nodes. The interval has to suit the engine's actual
+  // speed: this one runs a few thousand nodes a second, so a 1024-node gap was
+  // roughly 200ms of overshoot on a 180ms budget. Sampling every 64 nodes
+  // keeps the check cheap while bounding an overrun to one small batch.
+  if ((nodeCount & 63) === 0 && clock() > deadline) throw SEARCH_ABORTED;
   if (depth === 0 || ['checkmate', 'stalemate', 'draw'].includes(s.status)) return evaluatePosition(s, perspective);
   const moves = generateLegalMoves(s); if (moves.length === 0) return evaluatePosition(s, perspective);
   moves.sort((a, b) => (b.capturedPiece ? PIECE_VALUES[b.capturedPiece.type] : 0) - (a.capturedPiece ? PIECE_VALUES[a.capturedPiece.type] : 0));
@@ -579,8 +598,10 @@ function minimax(s: GameState, depth: number, alpha: number, beta: number, persp
 export const FULL_RULES_ELO = 1250;
 
 export interface Strength {
-  /** Plies of search. */
+  /** Ceiling on plies. The search stops earlier if the budget runs out. */
   depth: number;
+  /** Wall-clock budget for one move, in milliseconds. */
+  budgetMs: number;
   /** Chance the engine takes a weaker move than the one it found. */
   blunderChance: number;
   /** Whether castling and en passant are reliably available to it. */
@@ -596,20 +617,21 @@ export interface Strength {
  */
 export function describeStrength(elo: number): Strength {
   let depth = 1;
+  let budgetMs = 60;
   let blunderChance = 0;
-  if (elo < 800)       { depth = 1; blunderChance = 0.4; }
-  else if (elo < 1200) { depth = 2; blunderChance = 0.2; }
-  else if (elo < 1600) { depth = 3; blunderChance = 0.1; }
-  else if (elo < 2000) { depth = 3; blunderChance = 0.05; }
-  else                 { depth = 4; blunderChance = 0; }
-  return { depth, blunderChance, knowsFullRules: elo >= FULL_RULES_ELO };
+  if (elo < 800)       { depth = 1; budgetMs = 60;  blunderChance = 0.4; }
+  else if (elo < 1200) { depth = 2; budgetMs = 100; blunderChance = 0.2; }
+  else if (elo < 1600) { depth = 4; budgetMs = 180; blunderChance = 0.1; }
+  else if (elo < 2000) { depth = 5; budgetMs = 300; blunderChance = 0.05; }
+  else                 { depth = 6; budgetMs = 500; blunderChance = 0; }
+  return { depth, budgetMs, blunderChance, knowsFullRules: elo >= FULL_RULES_ELO };
 }
 
 export function findBestMove(s: GameState, elo: number = 1200): Move | null {
   const moves = generateLegalMoves(s);
   if (moves.length === 0) return null;
   const perspective = s.turn;
-  const { depth, blunderChance } = describeStrength(elo);
+  const { depth: maxDepth, budgetMs, blunderChance } = describeStrength(elo);
 
   // Below FULL_RULES_ELO the engine does not reliably know castling or en
   // passant, so
@@ -627,16 +649,17 @@ export function findBestMove(s: GameState, elo: number = 1200): Move | null {
 
   const finalMoves = filteredMoves.length > 0 ? filteredMoves : moves;
 
-  const started = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const started = clock();
   nodeCount = 0;
   cutoffCount = 0;
+  let reachedDepth = 0;
 
   const report = (chosen: Move, scored: { notation: string; score: number; chosen: boolean }[], blundered: boolean) => {
     if (!traceListener) return;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     try {
       publishSearchTrace({
-        elo, depth, nodes: nodeCount, cutoffs: cutoffCount,
+        elo, depth: reachedDepth, nodes: nodeCount, cutoffs: cutoffCount,
         elapsedMs: now - started,
         blundered,
         legalMoves: moves.length,
@@ -652,20 +675,81 @@ export function findBestMove(s: GameState, elo: number = 1200): Move | null {
     return slip;
   }
 
+  // A deliberate blunder does not search at all. Start the deadline only for
+  // the path that enters minimax, so every early return leaves the module in
+  // the same idle state as the finally block below.
+  deadline = started + budgetMs;
+
+  // Captures first for the opening pass; later passes reorder by what the
+  // previous one learned.
   finalMoves.sort((a, b) => {
     const valA = a.capturedPiece ? PIECE_VALUES[a.capturedPiece.type] : 0;
     const valB = b.capturedPiece ? PIECE_VALUES[b.capturedPiece.type] : 0;
     return valB - valA;
   });
 
-  let bestM = finalMoves[0], bestV = -Infinity, alpha = -Infinity, beta = Infinity;
-  const scored: { notation: string; score: number; chosen: boolean }[] = [];
-  for (const m of finalMoves) {
-    const v = minimax(applyMove(s, m), depth - 1, alpha, beta, perspective);
-    if (traceListener) scored.push({ notation: describeMove(s, m), score: v, chosen: false });
-    if (v > bestV) { bestV = v; bestM = m; }
-    alpha = Math.max(alpha, bestV);
+  /**
+   * Iterative deepening.
+   *
+   * The engine used to search one fixed depth, which made its response time a
+   * property of the position rather than a promise to the player: the top
+   * rating took about seven seconds on a middlegame board, long enough to look
+   * broken. Now it searches depth 1, then 2, and so on, keeping the best move
+   * from the last pass that finished, and stops when the budget is spent. The
+   * answer is always from a completed search, and it always arrives on time.
+   *
+   * Re-searching shallower depths is not the waste it appears to be. Each pass
+   * leaves the moves ordered best-first for the next one, and alpha-beta prunes
+   * far harder against a good first guess -- which is why this is usually
+   * faster to a given depth than going straight there.
+   */
+  let bestM = finalMoves[0];
+  let scored: { notation: string; score: number; chosen: boolean }[] = [];
+
+  try {
+  for (let d = 1; d <= maxDepth; d++) {
+    let alpha = -Infinity;
+    const beta = Infinity;
+    let passBest = finalMoves[0];
+    let passBestV = -Infinity;
+    const passScored: { notation: string; score: number; chosen: boolean }[] = [];
+
+    try {
+      for (const m of finalMoves) {
+        const v = minimax(applyMove(s, m), d - 1, alpha, beta, perspective);
+        passScored.push({ notation: traceListener ? describeMove(s, m) : '', score: v, chosen: false });
+        if (v > passBestV) { passBestV = v; passBest = m; }
+        alpha = Math.max(alpha, passBestV);
+      }
+    } catch (err) {
+      if (err !== SEARCH_ABORTED) throw err;
+      // Out of time partway through this depth. The completed moves were
+      // searched against an incomplete window, so this pass is discarded
+      // whole and the previous depth's answer stands.
+      break;
+    }
+
+    // The pass finished, so its result supersedes the shallower one.
+    bestM = passBest;
+    scored = passScored;
+    reachedDepth = d;
+
+    // Order the next pass by this one's scores. This is the real payoff of
+    // iterative deepening: the best move first means the deeper search cuts
+    // off almost immediately on everything else.
+    const rank = new Map(finalMoves.map((m, i) => [m, passScored[i].score]));
+    finalMoves.sort((a, b) => (rank.get(b) ?? 0) - (rank.get(a) ?? 0));
+
+    // No point starting a pass that cannot finish.
+    if (clock() > deadline) break;
   }
+  } finally {
+    // Unconditional: if anything unexpected escapes the loop, a stale deadline
+    // would make the *next* search abort instantly and silently return a
+    // depth-zero move.
+    deadline = Infinity;
+  }
+
   if (traceListener) {
     const best = describeMove(s, bestM);
     for (const row of scored) row.chosen = row.notation === best;

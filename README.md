@@ -51,10 +51,26 @@ rendering while it thinks.
 
 - **Click a piece**, then click one of the highlighted squares.
 - **Drag** to orbit, **scroll** to zoom.
-- **Engine strength** is the vertical slider on the left. It sets search depth,
-  a blunder rate, and whether the engine reliably knows castling and en
-  passant at all — below 1250 it mostly stumbles into them, so weak play reads
-  as inexperience rather than as a smaller budget.
+- **Engine strength** is the vertical slider on the left. It sets a time
+  budget, a ceiling on search depth, a blunder rate, and whether the engine
+  reliably knows castling and en passant at all — below 1250 it mostly
+  stumbles into them, so weak play reads as inexperience rather than as a
+  smaller budget.
+
+The engine deepens iteratively against that budget and answers from the last
+pass that finished, so how long it thinks is a promise rather than a property
+of the position. Measured on a middlegame position, worst of five runs:
+
+| strength | budget | depth reached | worst observed |
+|---|---|---|---|
+| 600 | 60 ms | 1 | 6 ms |
+| 1200 | 180 ms | 2 | 189 ms |
+| 1600 | 300 ms | 3 | 316 ms |
+| 2200 | 500 ms | 3 | 517 ms |
+
+`test/search-budget.test.ts` enforces those bounds, because a latency claim
+nobody measures goes stale the first time somebody adds a term to the
+evaluator.
 - **Preview capture** cycles six staged positions, one per attacking piece, so
   you can see all six weapons without playing a game into the right shape.
 
