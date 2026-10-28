@@ -12,7 +12,7 @@ import {
 } from '../engine';
 import { searchBestMove } from '../searchClient';
 import { Board } from './Board';
-import { BoardModel, Piece3D } from './Pieces';
+import { VoxelPiece } from './VoxelPiece';
 
 /**
  * A playable board. You are white; the engine answers in a Web Worker so the
@@ -101,11 +101,11 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
           makeDefault
         />
 
-        <ambientLight intensity={0.25} />
+        <ambientLight intensity={0.18} />
         <hemisphereLight intensity={0.2} groundColor="#000000" />
         <directionalLight
           position={[10, 20, 10]}
-          intensity={2.0}
+          intensity={1.5}
           castShadow
           shadow-mapSize={[2048, 2048]}
           shadow-camera-far={100}
@@ -127,11 +127,10 @@ export function ChessGame({ elo = 1200 }: { elo?: number }) {
         />
 
         <Suspense fallback={null}>
-          <Environment preset="studio" environmentIntensity={0.8} />
-          <BoardModel />
+          <Environment preset="studio" environmentIntensity={0.35} />
           <Board selected={selected} validSquares={validSquares} onSelect={onSelect} />
           {pieces.map(({ key, r, c, type }) => (
-            <Piece3D
+            <VoxelPiece
               key={key}
               type={type!.type}
               color={type!.color}

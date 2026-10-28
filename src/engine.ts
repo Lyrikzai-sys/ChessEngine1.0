@@ -1,15 +1,18 @@
 /**
  * CHESS ENGINE
  * ---------------------------------------------------------------------------
- * Standard FIDE rules: castling, en passant, promotion, check, checkmate,
- * stalemate and the draw conditions. Pure logic with no imports, no DOM and
- * no I/O, which is what lets it run unchanged in a Web Worker and be tested
- * directly.
+ * Standard legal moves: castling, en passant, promotion, check, checkmate,
+ * stalemate, and draws by insufficient material. Threefold repetition and the
+ * fifty-move rule are NOT implemented; `halfMoveCount` is tracked but never
+ * ends a game. Pure logic with no imports, no DOM and no I/O, which is what
+ * lets it run unchanged in a Web Worker and be tested directly.
  *
  * Search is minimax with alpha-beta pruning. Positions are scored on
  * material, per-piece square tables, mobility and check, with captures
  * ordered first so cutoffs do more work. Playing strength is banded by
- * rating through search depth and a modelled blunder rate, not depth alone.
+ * rating-like difficulty bands (700-2000) through search depth and a modelled
+ * blunder rate, not depth alone. Those numbers are product controls; they have
+ * not been calibrated against rated engines or players.
  * ---------------------------------------------------------------------------
  */
 
@@ -107,12 +110,6 @@ export function createInitialState(mode: Mode): GameState {
 }
 
 /** Did `color` capture the opponent's queen at any point? */
-export function hasCapturedEnemyQueen(state: GameState, color: Color): boolean {
-  const oppColor = opponentOf(color);
-  const oppSide = sideOf(state, oppColor);
-  return oppSide.capturedByOpponent.some(p => p.type === 'Q' && p.color === oppColor);
-}
-
 export function findKing(board: Board, color: Color): Coord | null {
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
     const p = board[r][c];
@@ -326,7 +323,6 @@ export function applyMove(state: GameState, move: Move): GameState {
       const piece = ns.board[fr[0]][fr[1]]!, target = ns.board[tr[0]][tr[1]];
       if (target) {
         sideOf(ns, target.color).capturedByOpponent.push({ ...target });
-        clearWardOnSquare(sideOf(ns, target.color), tr);
       }
       ns.board[tr[0]][tr[1]] = { ...piece, hasMoved: true };
       ns.board[fr[0]][fr[1]] = null;
@@ -360,13 +356,6 @@ export function applyMove(state: GameState, move: Move): GameState {
   }
   ns.history.push(move); ns.halfMoveCount++; ns.turn = opp;
   updateStatus(ns); return ns;
-}
-
-function startingSquareForKnight(id: string): Coord | null {
-  const m = id.match(/^([wb])N(\d+)/); if (!m) return null;
-  return [m[1] === 'w' ? 7 : 0, parseInt(m[2], 10)];
-}
-function clearWardOnSquare(side: SideState, sq: Coord) {
 }
 
 export function generateLegalMoves(state: GameState): Move[] {
