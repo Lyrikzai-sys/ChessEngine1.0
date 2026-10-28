@@ -1,3 +1,10 @@
 node_modules/
 dist/
 coverage/
+
+# Tauri desktop shell: Rust build output is ~1.2GB and regenerates from source.
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Packaged installers are build products, not source.
+releases/

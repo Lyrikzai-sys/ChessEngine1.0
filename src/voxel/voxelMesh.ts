@@ -1,15 +1,14 @@
 /**
- * Voxel core — the bridge between voxel data and the existing sculpt pipeline.
+ * Voxel core for the chess set and its capture effects.
  *
- * The whole point: a voxel model meshes to `{positions, index}` + per-vertex
- * colours, which is EXACTLY the shape a sculpt body's `customGeo` already
- * takes. So a voxel character is not a new kind of object with its own renderer
- * — it becomes an ordinary sculpt body that every existing tool already
- * understands (sculpt brushes, vertex paint, masking, physics, save/load).
+ * A model is a sparse grid of palette-indexed cells. At render time the mesher
+ * emits only the faces exposed to air as indexed Three.js geometry with
+ * per-vertex colour. That gives the pieces crisp, intentional silhouettes
+ * without shipping any external model files.
  *
- * We store the compact VOXEL data on the body and re-mesh at build time, the
- * same way `base + subdivisions` reconstructs a primitive. That keeps project
- * files small (a few hundred cells) instead of persisting ~10k mesh vertices.
+ * Keeping the compact grid is also useful for the game layer: the same cells
+ * that form a king or knight can be sampled into fragments when that piece is
+ * captured, rather than maintaining a separate explosion asset.
  */
 
 export interface VoxelModel {
@@ -112,11 +111,10 @@ const FACES: Array<{ n: [number, number, number]; v: number[][] }> = [
  * Culled meshing: emit a quad only where a solid cell touches empty space.
  * Interior faces are skipped, which is the bulk of the savings; we deliberately
  * do NOT greedy-merge coplanar quads, because keeping one quad per face keeps
- * per-voxel colour trivial and leaves an even vertex distribution for the
- * sculpt brushes to push around afterwards.
+ * per-voxel colour trivial and gives the capture effect clean, even fragments.
  *
- * The model is centred on X/Z and sits on Y=0, so a character's feet land on
- * the floor when the body is dropped at ground level.
+ * The model is centred on X/Z and rests on Y=0, so every chess piece sits
+ * cleanly on its board square.
  */
 export function meshVoxels(model: VoxelModel): VoxelMeshResult {
   const [sx, sy, sz] = model.size;
