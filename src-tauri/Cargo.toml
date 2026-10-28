@@ -1,5 +1,5 @@
 [package]
-name = "sacred-chess"
+name = "voxel-chess"
 version = "1.0.0"
 description = "A playable voxel chess demonstration."
 authors = ["Brock Reece"]

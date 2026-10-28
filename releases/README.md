@@ -4,8 +4,8 @@ Windows x64, built from the commit that added them.
 
 | file | what it is |
 |---|---|
-| `Sacred-Chess-1.0.0-x64-setup.exe` | NSIS installer, ~2.2 MB |
-| `sacred-chess.exe` | the application itself, ~8.7 MB, runs without installing |
+| `Voxel-Chess-1.0.0-x64-setup.exe` | NSIS installer, ~2.2 MB |
+| `voxel-chess.exe` | the application itself, ~8.7 MB, runs without installing |
 
 Neither is code-signed, so Windows SmartScreen will warn on first run.
 
