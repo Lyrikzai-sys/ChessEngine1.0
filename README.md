@@ -71,6 +71,27 @@ of the position. Measured on a middlegame position, worst of five runs:
 `test/search-budget.test.ts` enforces those bounds, because a latency claim
 nobody measures goes stale the first time somebody adds a term to the
 evaluator.
+
+## Headless strength calibration
+
+The 3D board is not part of an engine-strength measurement. The calibration
+runner plays complete games in code against a local UCI probe and reports
+wins, draws, losses, unfinished games, and an engine-relative estimate when
+there are enough terminal results. It never opens the browser game.
+
+Download a Stockfish binary from its official distribution, then run:
+
+```bash
+npm run calibrate -- --stockfish path/to/stockfish.exe \
+  --games 20 --concurrency 4 --our-elo 2000 --probe-elo 1320 \
+  --probe-movetime 20 --max-plies 240 --colors both
+```
+
+`--colors both` is recommended for a rating experiment because it balances
+first-move advantage. `--colors white` is available when testing the shipped
+player-facing matchup. The displayed estimate is **not a certified human
+Elo**: it is only a result against the named Stockfish configuration. Capped
+games stay `unfinished`; they are never quietly counted as draws.
 - **Preview capture** cycles six staged positions, one per attacking piece, so
   you can see all six weapons without playing a game into the right shape.
 

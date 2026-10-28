@@ -10,3 +10,8 @@ src-tauri/gen/schemas/
 # An unsigned .exe in git history is ~11MB that can never be taken out of a
 # clone, and a lean source tree reads better than an unknown executable.
 releases/
+
+# Local calibration probes and match reports. Stockfish is downloaded only for
+# headless strength checks; neither its binary nor machine-specific results
+# belong in the source repository.
+.calibration/
