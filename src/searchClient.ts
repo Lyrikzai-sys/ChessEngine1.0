@@ -47,7 +47,7 @@ function ensureWorker(): Worker | null {
   if (typeof Worker === 'undefined') { workerUnavailable = true; return null; }
 
   try {
-    worker = new Worker(new URL('./chessSearch.worker.ts', import.meta.url), { type: 'module' });
+    worker = new Worker(new URL('./search.worker.ts', import.meta.url), { type: 'module' });
   } catch {
     workerUnavailable = true;
     return null;
