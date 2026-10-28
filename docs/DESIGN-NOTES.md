@@ -67,9 +67,41 @@ Two details that are easy to get wrong:
   overran to 281 ms. Sampling every 64 nodes bounds the overrun to one small
   batch without making timer reads dominate the search.
 
-The honest trade: bounded latency costs depth. The strongest setting reaches
-three plies in 500 ms where it used to reach four in seven seconds. A
-transposition table would buy that ply back and is the obvious next move.
+The honest trade: bounded latency costs depth, and the budgets were later
+raised considerably when the difficulty bands were measured rather than
+guessed (below). A transposition table would buy depth back at the same
+budget and is the obvious next move.
+
+## The difficulty labels were guesses, so they were measured
+
+A setting called "1200" is a claim about strength, and it was never checked.
+When it finally was — by playing complete games in code against Elo-limited
+Stockfish and Fairy-Stockfish — the band scored **0.02 and 0.00**. It lost 41
+of 42 completed games to the opponent it was named after.
+
+The top band was no better off: it lost 17 of 19 to Stockfish limited to
+1320, and every game to two full-strength engines.
+
+Raising the time budget helped a little (0.02 → 0.25). The fix that mattered
+was **quiescence search**.
+
+The search stopped at a fixed depth and evaluated whatever position it found
+there, including positions in the middle of a capture sequence. A board where
+your queen is about to be taken looks fine to a material count if the capture
+happens one ply past the horizon. So the engine walked into exchanges it could
+not see the end of, which is exactly the mistake that makes an engine feel
+weak rather than merely shallow.
+
+Searching captures — and all evasions when in check — out to a quiet position
+took the band from **0.02 to 0.70** against the same probe.
+
+What this does not prove: the samples are ten to fifty games at a fast time
+control, and the figure is relative to one engine configuration, not a human
+rating. It shows the collapse is fixed. It does not make the label exact, and
+the top band has not been re-measured since quiescence landed.
+
+The runner lives in `scripts/calibrate.mjs` and never opens the browser game;
+engine strength has nothing to do with the renderer.
 
 ## Pieces are generated, not loaded
 

@@ -565,6 +565,41 @@ let deadline = Infinity;
 
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
+/**
+ * Continue only forcing captures after the regular search horizon. A raw
+ * material evaluation at depth zero mistakes "my queen is en prise" for a
+ * stable position, which is especially punishing at intermediate budgets.
+ * Four capture plies cap the work while covering the usual exchange sequence.
+ */
+function quiescence(s: GameState, alpha: number, beta: number, perspective: Color, remaining = 4): number {
+  nodeCount++;
+  if ((nodeCount & 63) === 0 && clock() > deadline) throw SEARCH_ABORTED;
+  const standPat = evaluatePosition(s, perspective);
+  if (remaining === 0 || ['checkmate', 'stalemate', 'draw'].includes(s.status)) return standPat;
+  const legalMoves = generateLegalMoves(s);
+  // A checked side must search all legal evasions, not just captures.
+  const candidates = (s.status === 'check' ? legalMoves : legalMoves.filter((move) => move.capturedPiece || move.promoteTo))
+    .sort((a, b) => (b.capturedPiece ? PIECE_VALUES[b.capturedPiece.type] : 0) - (a.capturedPiece ? PIECE_VALUES[a.capturedPiece.type] : 0));
+  if (candidates.length === 0) return standPat;
+
+  if (s.turn === perspective) {
+    if (standPat >= beta) return standPat;
+    let best = Math.max(alpha, standPat);
+    for (const move of candidates) {
+      best = Math.max(best, quiescence(applyMove(s, move), best, beta, perspective, remaining - 1));
+      if (best >= beta) { cutoffCount++; break; }
+    }
+    return best;
+  }
+
+  if (standPat <= alpha) return standPat;
+  let best = Math.min(beta, standPat);
+  for (const move of candidates) {
+    best = Math.min(best, quiescence(applyMove(s, move), alpha, best, perspective, remaining - 1));
+    if (best <= alpha) { cutoffCount++; break; }
+  }
+  return best;
+}
 function minimax(s: GameState, depth: number, alpha: number, beta: number, perspective: Color): number {
   nodeCount++;
   // Sampled rather than checked every node, because the clock read costs more
@@ -573,7 +608,8 @@ function minimax(s: GameState, depth: number, alpha: number, beta: number, persp
   // roughly 200ms of overshoot on a 180ms budget. Sampling every 64 nodes
   // keeps the check cheap while bounding an overrun to one small batch.
   if ((nodeCount & 63) === 0 && clock() > deadline) throw SEARCH_ABORTED;
-  if (depth === 0 || ['checkmate', 'stalemate', 'draw'].includes(s.status)) return evaluatePosition(s, perspective);
+  if (['checkmate', 'stalemate', 'draw'].includes(s.status)) return evaluatePosition(s, perspective);
+  if (depth === 0) return quiescence(s, alpha, beta, perspective);
   const moves = generateLegalMoves(s); if (moves.length === 0) return evaluatePosition(s, perspective);
   moves.sort((a, b) => (b.capturedPiece ? PIECE_VALUES[b.capturedPiece.type] : 0) - (a.capturedPiece ? PIECE_VALUES[a.capturedPiece.type] : 0));
   const max = s.turn === perspective;
@@ -595,7 +631,7 @@ function minimax(s: GameState, depth: number, alpha: number, beta: number, persp
 }
 
 /** Below this the engine only stumbles into castling and en passant. */
-export const FULL_RULES_ELO = 1250;
+export const FULL_RULES_ELO = 800;
 
 export interface Strength {
   /** Ceiling on plies. The search stops earlier if the budget runs out. */
@@ -619,11 +655,13 @@ export function describeStrength(elo: number): Strength {
   let depth = 1;
   let budgetMs = 60;
   let blunderChance = 0;
-  if (elo < 800)       { depth = 1; budgetMs = 60;  blunderChance = 0.4; }
-  else if (elo < 1200) { depth = 2; budgetMs = 100; blunderChance = 0.2; }
-  else if (elo < 1600) { depth = 4; budgetMs = 180; blunderChance = 0.1; }
-  else if (elo < 2000) { depth = 5; budgetMs = 300; blunderChance = 0.05; }
-  else                 { depth = 6; budgetMs = 500; blunderChance = 0; }
+  if (elo < 800)       { depth = 1; budgetMs = 60;   blunderChance = 0.4; }
+  else if (elo < 1200) { depth = 2; budgetMs = 100;  blunderChance = 0.2; }
+  // Calibrated against limited-strength Stockfish and Fairy-Stockfish. The
+  // previous 1200 band (depth 4 / 180ms / 10% random move) scored near zero.
+  else if (elo < 1600) { depth = 7; budgetMs = 900;   blunderChance = 0.025; }
+  else if (elo < 2000) { depth = 8; budgetMs = 1250;  blunderChance = 0.01; }
+  else                 { depth = 9; budgetMs = 1700;  blunderChance = 0; }
   return { depth, budgetMs, blunderChance, knowsFullRules: elo >= FULL_RULES_ELO };
 }
 
