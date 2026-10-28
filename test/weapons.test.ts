@@ -104,3 +104,62 @@ describe('strike styles', () => {
     }
   });
 });
+
+/**
+ * Silhouette width per row, flattened through the depth axis.
+ *
+ * Shape is the whole job here: these are seen small, in motion, against a
+ * busy board, so what matters is the outline. The bishop's first weapon was a
+ * crozier, which is a correct crozier and reads as a question mark, and the
+ * first cannon was a uniform tube that read as a pipe. Both were caught by
+ * eye; these assertions are what stops them coming back.
+ */
+function profile(type: PieceType): number[] {
+  const model = weaponModel(type, 'w');
+  const [sx, sy, sz] = model.size;
+  const solid = new Set<number>();
+  for (let i = 0; i < model.cells.length; i += 2) solid.add(model.cells[i]);
+
+  const widths: number[] = [];
+  for (let y = 0; y < sy; y++) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (let x = 0; x < sx; x++) {
+      for (let z = 0; z < sz; z++) {
+        if (solid.has((y * sz + z) * sx + x)) { min = Math.min(min, x); max = Math.max(max, x); break; }
+      }
+    }
+    widths.push(max < min ? 0 : max - min + 1);
+  }
+  return widths;
+}
+
+describe('weapon silhouettes', () => {
+  it('are never a uniform stick', () => {
+    for (const type of TYPES) {
+      const solidRows = profile(type).filter((w) => w > 0);
+      const widest = Math.max(...solidRows);
+      const narrowest = Math.min(...solidRows);
+
+      // A shape whose widest part barely exceeds its narrowest has no
+      // features at all, and at this size reads as a rod.
+      expect(widest / narrowest, `${type} has no shape to it`).toBeGreaterThanOrEqual(2.5);
+    }
+  });
+
+  it('give the cross-staff a bar far wider than its shaft', () => {
+    const widths = profile('B');
+    // The narrowest solid row is bare shaft; picking a row by index lands on
+    // a decorative band instead and understates the ratio.
+    const shaft = Math.min(...widths.filter((w) => w > 0));
+    expect(Math.max(...widths) / shaft, 'crossbar is not distinct from the shaft').toBeGreaterThanOrEqual(4);
+  });
+
+  it('taper the cannon from breech to muzzle', () => {
+    const widths = profile('R');
+    const muzzle = widths[widths.length - 2];
+    const breech = widths[5];
+    // Built pointing +Y, so the muzzle is the high end.
+    expect(breech, 'cannon does not widen toward the breech').toBeGreaterThan(muzzle);
+  });
+});

@@ -16,6 +16,10 @@ import { type VoxelModel, VoxelGrid } from './voxelMesh';
 const GRID = 15;
 const C = 7;
 
+/** The cross-staff needs a wider bed than the rest for its crossbar. */
+const CROSS_GRID = 19;
+const CROSS_C = 9;
+
 /** Three value steps per material: weapons move fast, so fine shading is lost. */
 type Ladder = readonly [string, string, string];
 
@@ -81,11 +85,16 @@ export const RELEASE_AT: Record<StrikeStyle, number> = {
   channel: 0.4,
 };
 
-/** A filled disc in the XZ plane, centred on the grid axis. */
+/** A filled disc in the XZ plane, about an explicit centre. */
+function discAt(g: VoxelGrid, y: number, radius: number, hex: string, c: number) {
+  for (let x = c - radius; x <= c + radius; x++)
+    for (let z = c - radius; z <= c + radius; z++)
+      if ((x - c) ** 2 + (z - c) ** 2 <= radius * radius + radius * 0.5) g.set(x, y, z, hex);
+}
+
+/** The same, on the default grid axis. */
 function disc(g: VoxelGrid, y: number, radius: number, hex: string) {
-  for (let x = C - radius; x <= C + radius; x++)
-    for (let z = C - radius; z <= C + radius; z++)
-      if ((x - C) ** 2 + (z - C) ** 2 <= radius * radius + radius * 0.5) g.set(x, y, z, hex);
+  discAt(g, y, radius, hex, C);
 }
 
 /**
@@ -146,38 +155,71 @@ function buildSpear(k: Kit): VoxelGrid {
   return g;
 }
 
-/** Bishop: a crozier, the shepherd's crook, curling over at the head. */
-function buildCrozier(k: Kit): VoxelGrid {
-  const g = new VoxelGrid(GRID, 33, GRID);
-  for (let y = 0; y < 22; y++) {
-    disc(g, y, 1, k.gold[1]);
-    g.set(C, y, C, k.gold[2]);
-  }
-  for (let y = 4; y < 22; y += 6) disc(g, y, 2, k.gold[2]);
+/**
+ * Bishop: a cross-staff.
+ *
+ * This was a crozier — the shepherd's crook — which is the historically
+ * correct item and completely illegible as voxels. A 270-degree hook on a
+ * thin pole is, silhouette for silhouette, a question mark, and at this
+ * resolution the curl closed into a ring and read as a lollipop.
+ *
+ * A cross reads instantly at any size because the silhouette is two crossed
+ * bars and nothing else, it still says bishop, and it cannot be confused with
+ * the queen's halo. Flared tips and a gem at the crossing keep it from
+ * flattening into a plain plus sign.
+ */
+function buildCrossStaff(k: Kit): VoxelGrid {
+  const g = new VoxelGrid(CROSS_GRID, 40, CROSS_GRID);
+  const c = CROSS_C;
 
-  // Sweep a quarter-turn past vertical so the crook closes on itself.
-  for (let i = 0; i <= 28; i++) {
-    const a = (i / 28) * Math.PI * 1.45;
-    const x = Math.round(C + 4 * Math.sin(a));
-    const y = Math.round(26 - 4 * Math.cos(a));
-    for (let dy = 0; dy < 2; dy++) {
-      for (let dz = -1; dz <= 1; dz++) g.set(x, y + dy, C + dz, dz === 0 ? k.gold[2] : k.gold[1]);
-      g.set(x - 1, y + dy, C, k.gold[1]);
-      g.set(x + 1, y + dy, C, k.gold[1]);
-    }
+  // Shaft, with a bright core so it does not read as a flat bar.
+  for (let y = 0; y < 23; y++) {
+    discAt(g, y, 1, k.gold[1], c);
+    g.set(c, y, c, k.gold[2]);
   }
-  // A mote of light cradled in the crook.
-  for (let dz = -1; dz <= 1; dz++) g.set(C, 23, C + dz, dz === 0 ? k.gem[2] : k.gem[1]);
+  for (let y = 4; y < 22; y += 6) discAt(g, y, 2, k.gold[2], c);
+
+  // Knop: the swelling where the staff becomes the cross.
+  for (let y = 23; y < 28; y++) discAt(g, y, 3 - Math.abs(y - 25), k.gold[2], c);
+
+  const bar = (x0: number, y0: number, w: number, h: number, hex: string) => {
+    for (let y = y0; y < y0 + h; y++)
+      for (let x = x0; x < x0 + w; x++)
+        for (let dz = -1; dz <= 1; dz++) g.set(x, y, c + dz, dz === 0 ? hex : k.gold[1]);
+  };
+
+  bar(c - 1, 28, 3, 12, k.gold[2]);  // upright
+  bar(c - 6, 32, 13, 3, k.gold[2]);  // crossbar
+
+  // Flared tips, so the four ends widen instead of stopping dead.
+  bar(c - 2, 38, 5, 2, k.gold[2]);   // top
+  bar(c - 7, 31, 2, 5, k.gold[2]);   // left
+  bar(c + 6, 31, 2, 5, k.gold[2]);   // right
+
+  // The gem at the crossing is the mote this weapon throws.
+  for (let y = 32; y < 35; y++)
+    for (let x = c - 1; x <= c + 1; x++)
+      for (let dz = -1; dz <= 1; dz++) g.set(x, y, c + dz, dz === 0 ? k.gem[2] : k.gem[1]);
+
   return g;
 }
 
-/** Rook: a cannon. The rook fires down a rank; so does this. */
+/**
+ * Rook: a cannon. The rook fires down a rank; so does this.
+ *
+ * A plain tube is not a cannon — it is a pipe. What makes the shape read is
+ * the taper from a heavy breech to a narrow muzzle, the trunnions it would
+ * pivot on, and the cascabel knob at the back.
+ */
 function buildCannon(k: Kit): VoxelGrid {
   const g = new VoxelGrid(GRID, 28, GRID);
 
-  for (let y = 0; y < 6; y++) disc(g, y, 4, k.steel[0]); // breech
-  for (let y = 6; y < 26; y++) {
-    const r = y < 12 ? 4 : 3;
+  for (let y = 0; y < 3; y++) disc(g, y, 2, k.steel[0]);  // cascabel knob
+  for (let y = 3; y < 9; y++) disc(g, y, 5, k.steel[1]);  // breech, the heavy end
+
+  // Barrel tapers toward the muzzle, which is the whole silhouette.
+  for (let y = 9; y < 25; y++) {
+    const r = Math.round(5 - 2 * ((y - 9) / 16));
     for (let x = C - r; x <= C + r; x++) {
       for (let z = C - r; z <= C + r; z++) {
         const d2 = (x - C) ** 2 + (z - C) ** 2;
@@ -185,11 +227,24 @@ function buildCannon(k: Kit): VoxelGrid {
       }
     }
   }
-  for (const ring of [9, 17]) disc(g, ring, 4, k.steel[0]); // reinforcing bands
-  for (let y = 26; y < 28; y++) disc(g, y, 4, k.steel[1]);  // muzzle flare
+
+  for (const ring of [12, 19]) disc(g, ring, 4, k.steel[0]); // reinforcing bands
+
+  // Trunnions: the stubs a gun pivots on, and the detail that stops this
+  // reading as a length of pipe.
+  for (let y = 11; y < 14; y++) {
+    for (let d = 3; d <= 6; d++) {
+      g.set(C - d, y, C, k.steel[0]);
+      g.set(C + d, y, C, k.steel[0]);
+      g.set(C - d, y, C - 1, k.steel[1]);
+      g.set(C + d, y, C + 1, k.steel[1]);
+    }
+  }
+
+  for (let y = 25; y < 28; y++) disc(g, y, 4, k.steel[1]); // muzzle flare
 
   // Hollow the bore, so the muzzle reads as an opening rather than a stub.
-  for (let y = 19; y < 28; y++)
+  for (let y = 20; y < 28; y++)
     for (let x = C - 2; x <= C + 2; x++)
       for (let z = C - 2; z <= C + 2; z++)
         if ((x - C) ** 2 + (z - C) ** 2 <= 2.5) g.clear(x, y, z);
@@ -219,6 +274,17 @@ function buildHolyStaff(k: Kit): VoxelGrid {
   for (const y of [26, 27, 28, 29]) {
     for (let dz = -1; dz <= 1; dz++) g.set(C, y, C + dz, dz === 0 ? k.gem[2] : k.gem[1]);
   }
+
+  // Rays off the halo. Without them the ring is just a circle on a pole, and
+  // a circle on a pole is the same silhouette problem the crozier had.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const dx = Math.sin(a);
+    const dy = Math.cos(a);
+    for (let d = 4; d <= 5; d++) {
+      g.set(Math.round(C + dx * d), Math.round(27.5 + dy * d), C, k.gold[2]);
+    }
+  }
   return g;
 }
 
@@ -236,7 +302,7 @@ function buildGreatsword(k: Kit): VoxelGrid {
 const BUILDERS: Record<PieceType, (kit: Kit) => VoxelGrid> = {
   P: buildSword,
   N: buildSpear,
-  B: buildCrozier,
+  B: buildCrossStaff,
   R: buildCannon,
   Q: buildHolyStaff,
   K: buildGreatsword,
