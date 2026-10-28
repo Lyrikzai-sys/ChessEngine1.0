@@ -10,9 +10,10 @@ Chess engines fail quietly. A move generator can be wrong about en passant
 for years and still look like it plays chess.
 
 So correctness here is measured with **perft**: generate every legal move to a
-fixed depth and count the leaf nodes. Those counts are published, identical
-for every correct engine, and impossible to fudge — the initial position has
-exactly 197,281 nodes at depth 4 or the generator is broken.
+fixed depth and count the leaf nodes. Those counts are published and identical
+for every correct engine — the initial position has exactly 197,281 nodes at
+depth 4. Matching them is strong evidence the generator is right; failing to
+match them is proof that it is not.
 
 `test/perft.test.ts` checks four positions, including Kiwipete (dense with
 castling and pins) and two endgames chosen because they catch en-passant and
@@ -40,9 +41,14 @@ what the setting does.
 
 ## Pieces are generated, not loaded
 
-No model files ship and nothing is fetched at runtime. Each piece is built by
-filling a sparse voxel grid in code; a culled mesher then emits only the faces
-that touch air, as indexed geometry with per-vertex colour.
+No model files ship. Each piece is built by filling a sparse voxel grid in
+code; a culled mesher then emits only the faces that touch air, as indexed
+geometry with per-vertex colour.
+
+The scene is also lit entirely locally. Drei's `<Environment preset>` looks
+richer, but it downloads an HDR map from a CDN at runtime — which left the
+board black until the fetch landed, and would have broken the packaged
+desktop build offline altogether. Three lights and a fill replaced it.
 
 **Resolution was argued up twice.** Below roughly 32 cells across, every piece
 collapses into the same turned blob and only height tells them apart. A chess

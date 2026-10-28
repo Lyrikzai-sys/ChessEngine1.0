@@ -1,4 +1,4 @@
-import { OrbitControls, PerspectiveCamera, Environment } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -116,7 +116,7 @@ export function ChessGame({ elo: initialElo = 1200 }: { elo?: number }) {
   }, []);
 
   // useFrame stops entirely in a backgrounded tab, so neither the strike's
-  // own progress check nor Rapier can land the hit there. Without this, a
+  // own progress check nor the impact test can land the hit there. Without this, a
   // move begun just before the tab was hidden would never commit.
   useEffect(() => {
     if (!capture || capture.exploded) return;
@@ -233,8 +233,13 @@ export function ChessGame({ elo: initialElo = 1200 }: { elo?: number }) {
           makeDefault
         />
 
-        <ambientLight intensity={0.18} />
-        <hemisphereLight intensity={0.2} groundColor="#000000" />
+        {/* Lit entirely locally. Drei's <Environment preset> would look a
+            little richer, but it downloads an HDR map from a CDN at runtime,
+            which breaks the packaged desktop build offline and makes the
+            board appear black until the fetch lands. Nothing here is
+            fetched: three lights and a fill do the work instead. */}
+        <ambientLight intensity={0.42} />
+        <hemisphereLight intensity={0.5} color="#dce6f5" groundColor="#2a2118" />
         <directionalLight
           position={[10, 20, 10]}
           intensity={1.5}
@@ -247,7 +252,8 @@ export function ChessGame({ elo: initialElo = 1200 }: { elo?: number }) {
           shadow-camera-bottom={-20}
           shadow-bias={-0.0001}
         />
-        <pointLight position={[-10, 15, -10]} intensity={0.5} color="#ccddff" />
+        <pointLight position={[-10, 15, -10]} intensity={0.9} color="#ccddff" />
+        <pointLight position={[8, 6, -12]} intensity={0.45} color="#ffe8c0" />
         <spotLight
           position={[0, 24, 6]}
           angle={0.8}
@@ -258,9 +264,6 @@ export function ChessGame({ elo: initialElo = 1200 }: { elo?: number }) {
           shadow-mapSize={[1024, 1024]}
         />
 
-        <Suspense fallback={null}>
-          <Environment preset="studio" environmentIntensity={0.35} />
-        </Suspense>
         <Suspense fallback={null}>
           <Board selected={selected} validSquares={validSquares} onSelect={onSelect} />
           {pieces.map(({ key, r, c, type }) => (

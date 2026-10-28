@@ -1,15 +1,16 @@
 # Voxel Chess
 
 A chess engine with a verified move generator, and a 3D board to play it on.
-Everything you see is generated in code — no model files, no downloaded
-assets.
+Every piece, weapon and effect is generated in code — no imported models, and
+nothing fetched at runtime, so the desktop build works offline.
 
 ![The board](docs/images/board.jpg)
 
 The engine is the point. Its move generation is checked against published
-**perft** node counts, which are identical for every correct engine and
-impossible to fudge: the initial position has exactly 197,281 legal
-continuations at depth 4, or the generator is broken.
+**perft** node counts, which are identical for every correct engine: the
+initial position has exactly 197,281 legal continuations at depth 4. Matching
+them is strong evidence the generator is right, and failing to is proof that
+it is not.
 
 | | |
 |---|---|
@@ -85,7 +86,7 @@ What they actually cover:
   fallback to inline execution so a failed worker degrades instead of breaking.
 - **`src/voxel/`** — a sparse voxel grid and a culled mesher that emits only
   the faces touching air. The pieces and the weapons are both built with it.
-- **`src/ui/`** — React Three Fiber. The engine commits a move only after the
+- **`src/ui/`** — React Three Fiber, lit with local lights only. The engine commits a move only after the
   capture animation resolves, so `engine.ts` never learns the effects exist.
 
 [`docs/DESIGN-NOTES.md`](docs/DESIGN-NOTES.md) covers the decisions that were

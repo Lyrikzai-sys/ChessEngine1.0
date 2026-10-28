@@ -93,6 +93,30 @@ describe('game outcomes', () => {
     const fresh = createInitialState('standard');
     expect(isOver(fresh.status)).toBe(false);
   });
+
+  /**
+   * The bug this guards: `isHumanTurn` once excluded checkmate and stalemate
+   * but not draws, so a drawn game went on accepting moves. Every other test
+   * here reaches its state through the engine, and no engine path in this
+   * file produces 'draw', so the regression itself was never covered.
+   */
+  it('counts a draw as over, like the other terminal states', () => {
+    expect(isOver('draw')).toBe(true);
+
+    // The white king takes the last black piece, leaving king against king:
+    // neither side can force a win, so the game is drawn on the spot.
+    const state = emptyBoard();
+    put(state, [0, 0], 'K', 'b', 'bK');
+    put(state, [4, 4], 'K', 'w', 'wK');
+    put(state, [3, 4], 'Q', 'b', 'bQ');
+    state.turn = 'w';
+
+    const after = moveTo(state, [4, 4], [3, 4]);
+
+    expect(after.status).toBe('draw');
+    expect(after.winner).toBeNull();
+    expect(isOver(after.status)).toBe(true);
+  });
 });
 
 /**
