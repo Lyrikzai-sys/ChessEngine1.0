@@ -1,0 +1,57 @@
+name: Deploy demo
+
+# A repository nobody can play is a repository nobody tries. This publishes
+# the browser build to GitHub Pages on every push to main, so the README can
+# link something playable instead of asking a reader to clone and install.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Required by actions/deploy-pages: it mints an OIDC token rather than using
+# a PAT, so nothing long-lived needs to be stored in the repository.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. `cancel-in-progress: false` so a queued run waits
+# rather than being dropped — a cancelled deploy can leave the site on an
+# older build with no indication why.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Deploying a build that does not typecheck or pass its tests would put
+      # a broken demo behind the link in the README, which is worse than no
+      # link at all.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

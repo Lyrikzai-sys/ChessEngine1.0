@@ -1,5 +1,7 @@
 # Voxel Chess
 
+**[▶ Play it in your browser](https://lyrikzai-sys.github.io/ChessEngine1.0/)** — no install, no clone.
+
 A chess engine with a verified move generator, and a 3D board to play it on.
 Every piece, weapon and effect is generated in code — no imported models, and
 nothing fetched at runtime, so the desktop build works offline.
@@ -21,12 +23,17 @@ it is not.
 
 ## Running it
 
+The quickest way is the [live demo](https://lyrikzai-sys.github.io/ChessEngine1.0/),
+which is this repository's `main` branch built and deployed by CI.
+
+To run it locally:
+
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the address Vite prints (`http://localhost:5173` by default).
+Then open the address Vite prints (`http://localhost:5180` by default).
 
 ### Desktop
 
@@ -65,16 +72,24 @@ of the position. Measured on a middlegame position, worst of five runs:
 
 | strength | budget | depth cap | depth reached | worst observed |
 |---|---|---|---|---|
-| 600 | 60 ms | 1 | 1 | 9 ms |
-| 1000 | 100 ms | 2 | 2 | 59 ms |
-| 1400 | 440 ms | 7 | pending re-measurement | — |
-| 1800 | 1250 ms | 8 | 3 | 1260 ms |
-| 2200 | 1700 ms | 9 | 3 | 1711 ms |
+| 600 | 60 ms | 1 | 1 | 2 ms |
+| 1000 | 100 ms | 2 | 2 | 17 ms |
+| 1400 | 440 ms | 7 | 3 | 445 ms |
+| 1800 | 1250 ms | 8 | 4 | 1275 ms |
+| 2200 | 8000 ms | 11 | 5 | 8003 ms |
 
-Overshoot is 10–11 ms at the top, which is the deadline sampling interval
-doing its job. Note that the depth *caps* are not the binding constraint —
-the three strongest settings all run out of budget at three plies. The cap
-only matters in sparse endgames where the tree is small enough to exhaust.
+Overshoot is 2–25 ms across the range, which is the deadline sampling
+interval doing its job.
+
+The depth *caps* are not the binding constraint — every band runs out of
+budget first, so the cap only matters in sparse endgames where the tree is
+small enough to exhaust.
+
+**The top band trades responsiveness for strength deliberately.** Eight
+seconds a move is a long wait for someone trying the demo; it buys two extra
+plies over the 1800 band. If you are showing this to somebody, 1400 or 1800
+is the setting that feels like a game. The search runs in a Web Worker either
+way, so the board stays interactive while it thinks.
 
 `test/search-budget.test.ts` enforces those bounds, because a latency claim
 nobody measures goes stale the first time somebody adds a term to the
