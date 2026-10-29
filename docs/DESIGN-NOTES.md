@@ -52,7 +52,12 @@ the budget is spent. A partially searched depth is discarded whole, because
 its moves were scored against an incomplete window and the best of them is not
 the best move.
 
-Worst case went from ~7,000 ms to ~517 ms.
+That alone took the worst case from ~7,000 ms to ~517 ms. The budgets were
+later raised deliberately when the difficulty bands were calibrated, so the
+top one now spends up to 8,000 ms on purpose — but it spends it to a
+schedule, which is the part that changed. What a setting costs is now a
+number chosen in `describeStrength`, not a property of how busy the board
+happens to be.
 
 Two details that are easy to get wrong:
 
@@ -62,15 +67,36 @@ Two details that are easy to get wrong:
   this is affordable.
 - **The deadline is sampled, and the interval has to suit the engine.**
   Reading the clock every node costs more than the work between nodes. The
-  first version sampled every 1024 nodes — but this engine only manages a few
-  thousand nodes a second, so one gap was ~200 ms, and a 180 ms budget
-  overran to 281 ms. Sampling every 64 nodes bounds the overrun to one small
-  batch without making timer reads dominate the search.
+  first version sampled every 1024 nodes, a figure borrowed from engines that
+  run millions of nodes a second. This one managed a few thousand at the
+  time, so a single gap was ~200 ms and a 180 ms budget overran to 281 ms.
+  Sampling every 64 nodes bounds the overrun to one small batch without
+  letting timer reads dominate. Throughput has since gone from roughly 3–7k
+  to 16–20k nodes a second, which makes that interval cheaper rather than
+  wrong: it is the *lower* bound on speed that decides how coarse a sample
+  can safely be.
 
 The honest trade: bounded latency costs depth, and the budgets were later
 raised considerably when the difficulty bands were measured rather than
-guessed (below). A transposition table would buy depth back at the same
-budget and is the obvious next move.
+guessed (below).
+
+Some of that depth was bought back. The search now carries a transposition
+table keyed on placement, side to move, en passant and per-piece castling
+rights, plus killer-move and history ordering, and it makes and unmakes moves
+in place rather than cloning the position at every node. Against the same
+budget the strongest band went from three plies to five.
+
+Make/unmake is the part worth reading carefully, because it is where this
+kind of change usually goes wrong. `makeSearchMove` writes new piece objects
+instead of mutating the ones already on the board, and keeps the originals in
+the undo record, so restoring a reference is enough and neither `hasMoved`
+nor a promotion can leak back up the tree. Perft is what proves it: a state
+restore that is even slightly wrong changes the node counts immediately.
+
+One honest limit: `makeSearchMove` always increments the half-move clock and
+never resets it on a pawn move or capture, so the search itself cannot see a
+fifty-move draw. The game layer can, and unmake restores the counter, so this
+costs accuracy inside the search rather than correctness outside it.
 
 ## The difficulty labels were guesses, so they were measured
 
