@@ -20,6 +20,7 @@ export type Color = 'w' | 'b';
 export type PieceType = 'P' | 'N' | 'B' | 'R' | 'Q' | 'K';
 export type Coord = [number, number]; // [row, col]
 export type Mode = 'standard';
+export type DrawReason = 'insufficient-material' | 'threefold-repetition' | 'fifty-move';
 
 export interface Piece {
   type: PieceType;
@@ -56,7 +57,11 @@ export interface GameState {
   white: SideState;
   black: SideState;
   history: Move[];
+  /** Position identities, including the initial position, for threefold draws. */
+  positionHistory?: string[];
   status: 'playing' | 'check' | 'checkmate' | 'stalemate' | 'draw';
+  /** Present only when status is draw; stalemate remains its own status. */
+  drawReason?: DrawReason | null;
   winner: Color | null;
   mode: Mode;
 }
@@ -85,10 +90,40 @@ export const cloneState = (s: GameState): GameState => ({
   white: cloneSide(s.white),
   black: cloneSide(s.black),
   history: [...s.history],
+  positionHistory: [...(s.positionHistory ?? [repetitionKey(s)])],
   status: s.status,
+  drawReason: s.drawReason ?? null,
   winner: s.winner,
   mode: s.mode,
-});
+});/**
+ * Search never mutates a piece object: moved pieces are replaced, and captures
+ * clear a square. A speculative node can therefore share untouched pieces and
+ * only copy the eight board rows. Public applyMove still uses cloneState so
+ * callers retain the fully independent state they expect.
+ */
+function cloneSearchState(s: GameState): GameState {
+  return {
+    board: [...s.board],
+    turn: s.turn,
+    halfMoveCount: s.halfMoveCount,
+    enPassantTarget: s.enPassantTarget ? [...s.enPassantTarget] as Coord : null,
+    white: { capturedByOpponent: [] },
+    black: { capturedByOpponent: [] },
+    history: [],
+    positionHistory: [],
+    status: s.status,
+    drawReason: null,
+    winner: s.winner,
+    mode: s.mode,
+  };
+}/** Copy only rows that this speculative move writes. */
+function prepareSearchRows(state: GameState, move: Move): void {
+  const rows = new Set<number>();
+  if (move.from) rows.add(move.from[0]);
+  if (move.to) rows.add(move.to[0]);
+  if (move.capturedSquare) rows.add(move.capturedSquare[0]);
+  for (const row of rows) state.board[row] = [...state.board[row]];
+}
 
 export function createInitialState(mode: Mode): GameState {
   const board: Board = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -105,7 +140,7 @@ export function createInitialState(mode: Mode): GameState {
   return {
     board, turn: 'w', halfMoveCount: 0, enPassantTarget: null,
     white: emptySide(), black: emptySide(),
-    history: [], status: 'playing', winner: null, mode,
+    history: [], positionHistory: [], status: 'playing', drawReason: null, winner: null, mode,
   };
 }
 
@@ -175,6 +210,24 @@ export function isInCheck(state: GameState, color: Color): boolean {
   const k = findKing(state.board, color);
   if (!k) return false;
   return isSquareAttacked(state, k, opponentOf(color));
+}/** Identity used for threefold repetition: pieces, turn, castling and en passant. */
+function repetitionKey(state: GameState): string {
+  let board = '';
+  for (const row of state.board) for (const piece of row) board += piece ? `${piece.color}${piece.type}` : '..';
+  const rights = (color: Color, side: 'k' | 'q') => {
+    const row = color === 'w' ? 7 : 0;
+    const king = state.board[row][4];
+    const rook = state.board[row][side === 'k' ? 7 : 0];
+    return king?.type === 'K' && king.color === color && !king.hasMoved && rook?.type === 'R' && rook.color === color && !rook.hasMoved;
+  };
+  const castling = `${rights('w', 'k') ? 'K' : ''}${rights('w', 'q') ? 'Q' : ''}${rights('b', 'k') ? 'k' : ''}${rights('b', 'q') ? 'q' : ''}` || '-';
+  const ep = state.enPassantTarget && generatePseudoLegalMoves(state, state.turn).some(move => move.kind === 'enPassant') ? state.enPassantTarget.join(',') : '-';
+  return `${state.turn}|${castling}|${ep}|${board}`;
+}
+function isThreefoldRepetition(state: GameState): boolean {
+  const history = state.positionHistory ?? [];
+  const current = repetitionKey(state);
+  return history.filter(key => key === current).length >= 3;
 }
 
 function pawnPseudoMoves(state: GameState, from: Coord): Move[] {
@@ -311,10 +364,12 @@ export function generatePseudoLegalMoves(state: GameState, color: Color): Move[]
   return moves;
 }
 
-export function applyMove(state: GameState, move: Move): GameState {
-  const ns = cloneState(state);
+export function applyMove(state: GameState, move: Move, updateGameStatus = true): GameState {
+  const ns = updateGameStatus ? cloneState(state) : cloneSearchState(state);
+  if (!updateGameStatus) prepareSearchRows(ns, move);
   const color = ns.turn, opp = opponentOf(color);
-  const ourSide = sideOf(ns, color), oppSide = sideOf(ns, opp);
+  const movedPiece = move.from ? ns.board[move.from[0]][move.from[1]] : null;
+  const isCapture = move.kind === 'capture' || move.kind === 'enPassant' || Boolean(move.to && ns.board[move.to[0]][move.to[1]]);
   ns.enPassantTarget = null;
   switch (move.kind) {
     case 'normal':
@@ -354,15 +409,82 @@ export function applyMove(state: GameState, move: Move): GameState {
       break;
     }
   }
-  ns.history.push(move); ns.halfMoveCount++; ns.turn = opp;
-  updateStatus(ns); return ns;
+  ns.halfMoveCount = movedPiece?.type === 'P' || isCapture ? 0 : state.halfMoveCount + 1;
+  ns.turn = opp;
+  if (updateGameStatus) {
+    const positions = ns.positionHistory?.length ? ns.positionHistory : [repetitionKey(state)];
+    ns.positionHistory = positions;
+    ns.history.push(move);
+    updateStatus(ns);
+    positions.push(repetitionKey(ns));
+    if (ns.status !== 'checkmate' && ns.status !== 'stalemate' && ns.status !== 'draw') {
+      if (ns.halfMoveCount >= 100) { ns.status = 'draw'; ns.drawReason = 'fifty-move'; }
+      else if (isThreefoldRepetition(ns)) { ns.status = 'draw'; ns.drawReason = 'threefold-repetition'; }
+    }
+  } else {
+    // Search nodes need a correct immediate check/draw state, but not a full
+    // legal-move pass just to compute checkmate or stalemate at every child.
+    ns.history = [];
+    ns.white.capturedByOpponent = [];
+    ns.black.capturedByOpponent = [];
+    ns.winner = null;
+    ns.status = isInsufficient(ns.board) ? 'draw' : (isInCheck(ns, ns.turn) ? 'check' : 'playing');
+  }
+  return ns;
+}
+
+/**
+ * Legal filtering is the hottest operation in the engine. Temporarily update
+ * only the squares a candidate touches, test the king, then restore those
+ * exact references. Unlike public applyMove this allocates no state or board.
+ */
+function leavesKingSafe(state: GameState, move: Move, king: Coord): boolean {
+  const board = state.board;
+  const from = move.from!;
+  const to = move.to!;
+  const moving = board[from[0]][from[1]]!;
+  const target = board[to[0]][to[1]];
+  const moved: Piece = move.kind === 'promotion'
+    ? { type: move.promoteTo!, color: moving.color, hasMoved: true, id: moving.id }
+    : { ...moving, hasMoved: true };
+  const kingSquare: Coord = moving.type === 'K' ? to : king;
+  const captureSquare = move.capturedSquare;
+  const captured = captureSquare ? board[captureSquare[0]][captureSquare[1]] : null;
+  let rookFrom: Coord | null = null;
+  let rookTo: Coord | null = null;
+  let rook: Piece | null = null;
+
+  board[from[0]][from[1]] = null;
+  board[to[0]][to[1]] = moved;
+  if (captureSquare) board[captureSquare[0]][captureSquare[1]] = null;
+  if (move.kind === 'castle') {
+    const fileFrom = move.castleSide === 'k' ? 7 : 0;
+    const fileTo = move.castleSide === 'k' ? 5 : 3;
+    rookFrom = [from[0], fileFrom];
+    rookTo = [from[0], fileTo];
+    rook = board[rookFrom[0]][rookFrom[1]];
+    board[rookFrom[0]][rookFrom[1]] = null;
+    board[rookTo[0]][rookTo[1]] = rook ? { ...rook, hasMoved: true } : null;
+  }
+
+  try {
+    return !isSquareAttacked(state, kingSquare, opponentOf(state.turn));
+  } finally {
+    if (rookFrom && rookTo) {
+      board[rookFrom[0]][rookFrom[1]] = rook;
+      board[rookTo[0]][rookTo[1]] = null;
+    }
+    if (captureSquare) board[captureSquare[0]][captureSquare[1]] = captured;
+    board[from[0]][from[1]] = moving;
+    board[to[0]][to[1]] = target;
+  }
 }
 
 export function generateLegalMoves(state: GameState): Move[] {
-  return generatePseudoLegalMoves(state, state.turn).filter(m => {
-    const nextState = applyMoveLite(state, m);
-    return !isInCheck(nextState, state.turn);
-  });
+  const color = state.turn;
+  const king = findKing(state.board, color);
+  if (!king) return [];
+  return generatePseudoLegalMoves(state, color).filter(move => leavesKingSafe(state, move, king));
 }
 
 export function legalMovesFromSquare(state: GameState, sq: Coord): Move[] {
@@ -375,7 +497,7 @@ export function legalMovesFromSquare(state: GameState, sq: Coord): Move[] {
 }
 
 function applyMoveLite(state: GameState, move: Move): GameState {
-  const ns = cloneState(state); const color = ns.turn;
+  const ns = cloneSearchState(state); prepareSearchRows(ns, move); const color = ns.turn;
   switch (move.kind) {
     case 'normal':
     case 'capture': {
@@ -401,20 +523,29 @@ function applyMoveLite(state: GameState, move: Move): GameState {
 }
 
 function updateStatus(state: GameState): void {
+  state.drawReason = null;
   const isCheck = isInCheck(state, state.turn);
   const legalMoves = generateLegalMoves(state);
   if (legalMoves.length === 0) {
     if (isCheck) { state.status = 'checkmate'; state.winner = opponentOf(state.turn); }
-    else { state.status = 'stalemate'; }
-  } else if (isCheck) state.status = 'check';
-  else state.status = 'playing';
-  if (isInsufficient(state.board)) state.status = 'draw';
+    else { state.status = 'stalemate'; state.winner = null; }
+    return;
+  }
+  state.winner = null;
+  state.status = isCheck ? 'check' : 'playing';
+  if (isInsufficient(state.board)) { state.status = 'draw'; state.drawReason = 'insufficient-material'; }
 }
 
 function isInsufficient(board: Board): boolean {
-  const p: Piece[] = []; for (const row of board) for (const x of row) if (x) p.push(x);
-  if (p.length === 2) return true;
-  if (p.length === 3) { const n = p.find(x => x.type !== 'K'); if (n && (n.type === 'B' || n.type === 'N')) return true; }
+  const pieces: { piece: Piece; row: number; column: number }[] = [];
+  for (let row = 0; row < 8; row++) for (let column = 0; column < 8; column++) {
+    const piece = board[row][column]; if (piece) pieces.push({ piece, row, column });
+  }
+  const nonKings = pieces.filter(({ piece }) => piece.type !== 'K');
+  if (nonKings.length === 0) return true;
+  if (nonKings.length === 1) return nonKings[0].piece.type === 'B' || nonKings[0].piece.type === 'N';
+  if (nonKings.every(({ piece }) => piece.type === 'N')) return nonKings.length <= 2;
+  if (nonKings.every(({ piece }) => piece.type === 'B')) return new Set(nonKings.map(({ row, column }) => (row + column) % 2)).size === 1;
   return false;
 }
 
@@ -428,8 +559,8 @@ const PST: Record<PieceType, number[][]> = {
   K: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]],
 };
 
-export function evaluatePosition(s: GameState, perspective: Color): number {
-  if (s.status === 'checkmate') return s.winner === perspective ? 1000000 : -1000000;
+function evaluateScore(s: GameState, perspective: Color, legalMoveCount?: number): number {
+  if (s.status === 'checkmate') return s.winner === perspective ? 1_000_000 : -1_000_000;
   if (s.status === 'stalemate' || s.status === 'draw') return 0;
   let val = 0;
   for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
@@ -438,9 +569,12 @@ export function evaluatePosition(s: GameState, perspective: Color): number {
     val += sign * PIECE_VALUES[p.type] + sign * PST[p.type][p.color === 'w' ? r : 7 - r][c];
   }
   if (s.status === 'check') val += (s.turn === perspective ? -100 : 100);
-  const myMoves = s.turn === perspective ? generateLegalMoves(s).length : 0;
-  val += myMoves * 2;
-  return val;
+  const mobility = legalMoveCount ?? generateLegalMoves(s).length;
+  return val + (s.turn === perspective ? mobility : -mobility) * 2;
+}
+
+export function evaluatePosition(s: GameState, perspective: Color): number {
+  return evaluateScore(s, perspective);
 }
 
 /**
@@ -544,7 +678,8 @@ export function explainEvaluation(s: GameState, perspective: Color): EvalBreakdo
     position += sign * PST[p.type][p.color === 'w' ? r : 7 - r][c];
   }
   const check = s.status === 'check' ? (s.turn === perspective ? -100 : 100) : 0;
-  const mobility = (s.turn === perspective ? generateLegalMoves(s).length : 0) * 2;
+  const legalMoves = generateLegalMoves(s).length;
+  const mobility = (s.turn === perspective ? legalMoves : -legalMoves) * 2;
 
   return {
     material, position, mobility, check,
@@ -564,6 +699,95 @@ const SEARCH_ABORTED = Symbol('search-aborted');
 let deadline = Infinity;
 
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+/** A compact state identity: piece placement, castling-relevant moved bits,
+ * side to move and en-passant target. Search does not use history or captures. */
+function positionKey(s: GameState): string {
+  let key = s.turn;
+  key += s.enPassantTarget ? `${s.enPassantTarget[0]}${s.enPassantTarget[1]}` : '-';
+  for (const row of s.board) for (const piece of row) {
+    key += piece ? `${piece.color}${piece.type}${piece.hasMoved ? '1' : '0'}` : '..';
+  }
+  return key;
+}
+
+function moveKey(move: Move): string {
+  return `${move.kind}:${move.from?.join(',') ?? ''}:${move.to?.join(',') ?? ''}:${move.promoteTo ?? ''}:${move.castleSide ?? ''}`;
+}
+
+type Bound = 'exact' | 'lower' | 'upper';
+type Transposition = { depth: number; score: number; bound: Bound; bestMove: string };
+const transpositionTable = new Map<string, Transposition>();
+const MAX_TRANSPOSITIONS = 120_000;
+const killerMoves: [string?, string?][] = [];
+const historyScores = new Map<string, number>();
+const MAX_HISTORY_SCORE = 50_000;
+
+function recordCutoff(depth: number, move: Move): void {
+  const key = moveKey(move);
+  const killers = killerMoves[depth] ?? [];
+  if (killers[0] !== key) killerMoves[depth] = [key, killers[0]];
+  if (!move.capturedPiece && !move.promoteTo) {
+    historyScores.set(key, Math.min(MAX_HISTORY_SCORE, (historyScores.get(key) ?? 0) + depth * depth));
+  }
+}
+
+type SearchUndo = {
+  from: Coord; to: Coord; moving: Piece; target: Piece | null;
+  capturedSquare: Coord | null; captured: Piece | null;
+  rookFrom: Coord | null; rookTo: Coord | null; rook: Piece | null;
+  turn: Color; halfMoveCount: number; enPassantTarget: Coord | null;
+  status: GameState['status']; drawReason: DrawReason | null | undefined; winner: Color | null;
+};
+
+/** Mutate one search node in place, then restore it with searchAfterMove. */
+function makeSearchMove(s: GameState, move: Move): SearchUndo {
+  const from = move.from!, to = move.to!;
+  const moving = s.board[from[0]][from[1]]!, target = s.board[to[0]][to[1]];
+  const capturedSquare = move.capturedSquare ?? null;
+  const captured = capturedSquare ? s.board[capturedSquare[0]][capturedSquare[1]] : null;
+  const undo: SearchUndo = { from, to, moving, target, capturedSquare, captured, rookFrom: null, rookTo: null, rook: null, turn: s.turn, halfMoveCount: s.halfMoveCount, enPassantTarget: s.enPassantTarget ? [...s.enPassantTarget] as Coord : null, status: s.status, drawReason: s.drawReason, winner: s.winner };
+  s.enPassantTarget = null;
+  s.board[from[0]][from[1]] = null;
+  s.board[to[0]][to[1]] = move.kind === 'promotion' ? { type: move.promoteTo!, color: moving.color, hasMoved: true, id: moving.id + '_p' } : { ...moving, hasMoved: true };
+  if (capturedSquare) s.board[capturedSquare[0]][capturedSquare[1]] = null;
+  if (moving.type === 'P' && Math.abs(to[0] - from[0]) === 2) s.enPassantTarget = [(to[0] + from[0]) / 2, to[1]];
+  if (move.kind === 'castle') {
+    const rookFile = move.castleSide === 'k' ? 7 : 0, rookTarget = move.castleSide === 'k' ? 5 : 3;
+    undo.rookFrom = [from[0], rookFile]; undo.rookTo = [from[0], rookTarget];
+    undo.rook = s.board[undo.rookFrom[0]][undo.rookFrom[1]];
+    s.board[undo.rookFrom[0]][undo.rookFrom[1]] = null;
+    s.board[undo.rookTo[0]][undo.rookTo[1]] = undo.rook ? { ...undo.rook, hasMoved: true } : null;
+  }
+  s.turn = opponentOf(s.turn); s.halfMoveCount++; s.winner = null;
+  s.drawReason = isInsufficient(s.board) ? 'insufficient-material' : null;
+  s.status = s.drawReason ? 'draw' : (isInCheck(s, s.turn) ? 'check' : 'playing');
+  return undo;
+}
+function unmakeSearchMove(s: GameState, undo: SearchUndo): void {
+  if (undo.rookFrom && undo.rookTo) { s.board[undo.rookFrom[0]][undo.rookFrom[1]] = undo.rook; s.board[undo.rookTo[0]][undo.rookTo[1]] = null; }
+  if (undo.capturedSquare) s.board[undo.capturedSquare[0]][undo.capturedSquare[1]] = undo.captured;
+  s.board[undo.from[0]][undo.from[1]] = undo.moving; s.board[undo.to[0]][undo.to[1]] = undo.target;
+  s.turn = undo.turn; s.halfMoveCount = undo.halfMoveCount; s.enPassantTarget = undo.enPassantTarget; s.status = undo.status; s.drawReason = undo.drawReason; s.winner = undo.winner;
+}
+function searchAfterMove<T>(s: GameState, move: Move, run: () => T): T {
+  const undo = makeSearchMove(s, move); try { return run(); } finally { unmakeSearchMove(s, undo); }
+}
+
+function orderSearchMoves(moves: Move[], depth: number, preferredMove?: string): Move[] {
+  const killers = killerMoves[depth] ?? [];
+  return moves.sort((a, b) => {
+    const score = (move: Move) => {
+      const key = moveKey(move);
+      if (key === preferredMove) return 1_000_000;
+      if (key === killers[0]) return 900_000;
+      if (key === killers[1]) return 800_000;
+      return (move.capturedPiece ? PIECE_VALUES[move.capturedPiece.type] * 16 : 0)
+        + (move.promoteTo ? PIECE_VALUES[move.promoteTo] : 0)
+        + (historyScores.get(key) ?? 0);
+    };
+    return score(b) - score(a);
+  });
+}
 
 /**
  * Continue only forcing captures after the regular search horizon. A raw
@@ -574,19 +798,25 @@ const clock = () => (typeof performance !== 'undefined' ? performance.now() : Da
 function quiescence(s: GameState, alpha: number, beta: number, perspective: Color, remaining = 4): number {
   nodeCount++;
   if ((nodeCount & 63) === 0 && clock() > deadline) throw SEARCH_ABORTED;
-  const standPat = evaluatePosition(s, perspective);
-  if (remaining === 0 || ['checkmate', 'stalemate', 'draw'].includes(s.status)) return standPat;
+  if (['checkmate', 'stalemate', 'draw'].includes(s.status)) return evaluatePosition(s, perspective);
   const legalMoves = generateLegalMoves(s);
+  // The old path generated every legal move twice at each leaf: once for
+  // mobility in evaluatePosition, again to choose quiescence candidates.
+  const standPat = evaluateScore(s, perspective, legalMoves.length);
+  if (remaining === 0) return standPat;
   // A checked side must search all legal evasions, not just captures.
   const candidates = (s.status === 'check' ? legalMoves : legalMoves.filter((move) => move.capturedPiece || move.promoteTo))
     .sort((a, b) => (b.capturedPiece ? PIECE_VALUES[b.capturedPiece.type] : 0) - (a.capturedPiece ? PIECE_VALUES[a.capturedPiece.type] : 0));
+  if (legalMoves.length === 0) {
+    return isInCheck(s, s.turn) ? (s.turn === perspective ? -1_000_000 : 1_000_000) : 0;
+  }
   if (candidates.length === 0) return standPat;
 
   if (s.turn === perspective) {
     if (standPat >= beta) return standPat;
     let best = Math.max(alpha, standPat);
     for (const move of candidates) {
-      best = Math.max(best, quiescence(applyMove(s, move), best, beta, perspective, remaining - 1));
+      best = Math.max(best, searchAfterMove(s, move, () => quiescence(s, best, beta, perspective, remaining - 1)));
       if (best >= beta) { cutoffCount++; break; }
     }
     return best;
@@ -595,41 +825,71 @@ function quiescence(s: GameState, alpha: number, beta: number, perspective: Colo
   if (standPat <= alpha) return standPat;
   let best = Math.min(beta, standPat);
   for (const move of candidates) {
-    best = Math.min(best, quiescence(applyMove(s, move), alpha, best, perspective, remaining - 1));
+    best = Math.min(best, searchAfterMove(s, move, () => quiescence(s, alpha, best, perspective, remaining - 1)));
     if (best <= alpha) { cutoffCount++; break; }
   }
   return best;
 }
 function minimax(s: GameState, depth: number, alpha: number, beta: number, perspective: Color): number {
   nodeCount++;
-  // Sampled rather than checked every node, because the clock read costs more
-  // than the work between nodes. The interval has to suit the engine's actual
-  // speed: this one runs a few thousand nodes a second, so a 1024-node gap was
-  // roughly 200ms of overshoot on a 180ms budget. Sampling every 64 nodes
-  // keeps the check cheap while bounding an overrun to one small batch.
   if ((nodeCount & 63) === 0 && clock() > deadline) throw SEARCH_ABORTED;
   if (['checkmate', 'stalemate', 'draw'].includes(s.status)) return evaluatePosition(s, perspective);
   if (depth === 0) return quiescence(s, alpha, beta, perspective);
-  const moves = generateLegalMoves(s); if (moves.length === 0) return evaluatePosition(s, perspective);
-  moves.sort((a, b) => (b.capturedPiece ? PIECE_VALUES[b.capturedPiece.type] : 0) - (a.capturedPiece ? PIECE_VALUES[a.capturedPiece.type] : 0));
-  const max = s.turn === perspective;
-  if (max) {
-    let best = -Infinity;
-    for (const m of moves) {
-      best = Math.max(best, minimax(applyMove(s, m), depth - 1, alpha, beta, perspective));
-      alpha = Math.max(alpha, best); if (alpha >= beta) { cutoffCount++; break; }
-    }
-    return best;
-  } else {
-    let best = Infinity;
-    for (const m of moves) {
-      best = Math.min(best, minimax(applyMove(s, m), depth - 1, alpha, beta, perspective));
-      beta = Math.min(beta, best); if (alpha >= beta) { cutoffCount++; break; }
-    }
-    return best;
-  }
-}
 
+  const key = positionKey(s);
+  const originalAlpha = alpha;
+  const originalBeta = beta;
+  const cached = transpositionTable.get(key);
+  if (cached && cached.depth >= depth) {
+    if (cached.bound === 'exact') return cached.score;
+    if (cached.bound === 'lower') alpha = Math.max(alpha, cached.score);
+    else beta = Math.min(beta, cached.score);
+    if (alpha >= beta) return cached.score;
+  }
+
+  const moves = generateLegalMoves(s);
+  if (moves.length === 0) {
+    return isInCheck(s, s.turn) ? (s.turn === perspective ? -1_000_000 : 1_000_000) : 0;
+  }
+  orderSearchMoves(moves, depth, cached?.bestMove);
+  const max = s.turn === perspective;
+  let best = max ? -Infinity : Infinity;
+  let bestMove = moves[0];
+
+  let first = true;
+  for (const move of moves) {
+    let score: number;
+    if (first) {
+      score = searchAfterMove(s, move, () => minimax(s, depth - 1, alpha, beta, perspective));
+      first = false;
+    } else if (max) {
+      // Principal variation search: a well-ordered sibling usually cannot beat
+      // the current alpha. Test it through a one-point window first, then pay
+      // for a full re-search only when it proves competitive.
+      score = searchAfterMove(s, move, () => minimax(s, depth - 1, alpha, Math.min(beta, alpha + 1), perspective));
+      if (score > alpha && score < beta) score = searchAfterMove(s, move, () => minimax(s, depth - 1, alpha, beta, perspective));
+    } else {
+      score = searchAfterMove(s, move, () => minimax(s, depth - 1, Math.max(alpha, beta - 1), beta, perspective));
+      if (score < beta && score > alpha) score = searchAfterMove(s, move, () => minimax(s, depth - 1, alpha, beta, perspective));
+    }
+    if ((max && score > best) || (!max && score < best)) {
+      best = score;
+      bestMove = move;
+    }
+    if (max) alpha = Math.max(alpha, best);
+    else beta = Math.min(beta, best);
+    if (alpha >= beta) { recordCutoff(depth, move); cutoffCount++; break; }
+  }
+
+  if (transpositionTable.size >= MAX_TRANSPOSITIONS) transpositionTable.clear();
+  transpositionTable.set(key, {
+    depth,
+    score: best,
+    bound: best <= originalAlpha ? 'upper' : best >= originalBeta ? 'lower' : 'exact',
+    bestMove: moveKey(bestMove),
+  });
+  return best;
+}
 /** Below this the engine only stumbles into castling and en passant. */
 export const FULL_RULES_ELO = 800;
 
@@ -662,7 +922,7 @@ export function describeStrength(elo: number): Strength {
   // Its first quiescence retest overshot 50%; this budget targets parity.
   else if (elo < 1600) { depth = 7; budgetMs = 440;   blunderChance = 0.085; }
   else if (elo < 2000) { depth = 8; budgetMs = 1250;  blunderChance = 0.01; }
-  else                 { depth = 9; budgetMs = 1700;  blunderChance = 0; }
+  else                 { depth = 11; budgetMs = 8000;  blunderChance = 0; }
   return { depth, budgetMs, blunderChance, knowsFullRules: elo >= FULL_RULES_ELO };
 }
 
@@ -686,7 +946,16 @@ export function findBestMove(s: GameState, elo: number = 1200): Move | null {
     return Math.random() < 0.15;
   });
 
-  const finalMoves = filteredMoves.length > 0 ? filteredMoves : moves;
+const finalMoves = filteredMoves.length > 0 ? filteredMoves : moves;
+  const searchRoot: GameState = {
+    ...s,
+    history: [],
+    white: { capturedByOpponent: [] },
+    black: { capturedByOpponent: [] },
+  };
+  transpositionTable.clear();
+  killerMoves.length = 0;
+  historyScores.clear();
 
   const started = clock();
   nodeCount = 0;
@@ -755,7 +1024,7 @@ export function findBestMove(s: GameState, elo: number = 1200): Move | null {
 
     try {
       for (const m of finalMoves) {
-        const v = minimax(applyMove(s, m), d - 1, alpha, beta, perspective);
+        const v = searchAfterMove(searchRoot, m, () => minimax(searchRoot, d - 1, alpha, beta, perspective));
         passScored.push({ notation: traceListener ? describeMove(s, m) : '', score: v, chosen: false });
         if (v > passBestV) { passBestV = v; passBest = m; }
         alpha = Math.max(alpha, passBestV);

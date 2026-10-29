@@ -143,3 +143,44 @@ describe('describeStrength', () => {
     expect(describeStrength(FULL_RULES_ELO).knowsFullRules).toBe(true);
   });
 });
+
+describe('draw adjudication', () => {
+  it('ends on the third occurrence of the same position', () => {
+    let state = createInitialState('standard');
+    // Nf3 Nf6 Ng1 Ng8 returns to the initial position. The second cycle is
+    // its third occurrence: initial, cycle one, cycle two.
+    for (let cycle = 0; cycle < 2; cycle++) {
+      state = moveTo(state, [7, 6], [5, 5]);
+      state = moveTo(state, [0, 6], [2, 5]);
+      state = moveTo(state, [5, 5], [7, 6]);
+      state = moveTo(state, [2, 5], [0, 6]);
+    }
+    expect(state.status).toBe('draw');
+    expect(state.drawReason).toBe('threefold-repetition');
+    expect(isOver(state.status)).toBe(true);
+  });
+
+  it('resets the fifty-move clock for pawn moves and captures, then draws at 100 quiet plies', () => {
+    const state = emptyBoard();
+    put(state, [0, 0], 'K', 'b', 'bK');
+    put(state, [7, 4], 'K', 'w', 'wK');
+    put(state, [7, 7], 'R', 'w', 'wR');
+    state.turn = 'w';
+    state.halfMoveCount = 99;
+    const after = moveTo(state, [7, 7], [7, 6]);
+    expect(after.status).toBe('draw');
+    expect(after.drawReason).toBe('fifty-move');
+  });
+
+  it('draws bishop-only positions when every bishop is locked to one square colour', () => {
+    const state = emptyBoard();
+    put(state, [0, 0], 'K', 'b', 'bK');
+    put(state, [1, 1], 'B', 'b', 'bB');
+    put(state, [7, 7], 'K', 'w', 'wK');
+    put(state, [7, 1], 'B', 'w', 'wB');
+    state.turn = 'w';
+    const after = moveTo(state, [7, 7], [7, 6]);
+    expect(after.status).toBe('draw');
+    expect(after.drawReason).toBe('insufficient-material');
+  });
+});

@@ -110,7 +110,16 @@ export function ResultBanner({ state, onNewGame }: { state: GameState; onNewGame
         accent: '#fbbf24',
       };
     }
-    return { heading: 'Draw', detail: 'Neither side can force a win.', accent: '#fbbf24' };
+    const details = {
+      'threefold-repetition': 'The same position occurred three times.',
+      'fifty-move': 'Fifty moves passed without a pawn move or capture.',
+      'insufficient-material': 'The remaining material cannot produce checkmate.',
+    } as const;
+    return {
+      heading: 'Draw',
+      detail: state.drawReason ? details[state.drawReason] : 'Neither side can force a win.',
+      accent: '#fbbf24',
+    };
   })();
 
   return (
