@@ -134,6 +134,11 @@ a real match series, not an estimate.
 | Berserk, full strength | old top | 50 | 0W–50L | 0.00 |
 | Koivisto, full strength | old top | 52 | 0W–52L | 0.00 |
 
+Berserk and Koivisto are not rating probes. They expose no standardised
+strength limit, so they ran at full strength — a few thousand Elo above
+anything here. Losing every game to them is the expected result and says only
+that the engine does not crash or hang against a far stronger opponent.
+
 A setting labelled 1200 that scores 0.02 against a 1200 opponent is not a
 1200 setting. Three fixes followed, each re-measured against the same probe:
 
@@ -159,9 +164,32 @@ Read these honestly:
   would differ at tournament time controls.
 - **Engine-relative, not human Elo.** A score against Stockfish limited to
   1200 is a statement about that configuration, nothing more.
-- **The top band has not been re-measured since quiescence landed.** The
-  Berserk and Koivisto rows describe the old configuration and are stale as a
-  description of the current one.
+
+### The top band, measured the same way
+
+The top band was the last one still carrying a guessed label. Re-measured
+after quiescence and the transposition table landed, against Stockfish at
+three limits:
+
+| probe | completed | result | score | estimate |
+|---|---|---|---|---|
+| Stockfish, limited to 1320 | 24 | 24W–0L | 1.00 | — |
+| Stockfish, limited to 1800 | 21 | 13W–3D–5L | 0.69 | 1939 |
+| Stockfish, limited to 2000 | 20 | **7W–9D–4L** | **0.575** | **2053** |
+
+The same band scored 0.11 against the 1320 probe before this work, and sat at
+an estimate of 948.
+
+The 1320 row is a ceiling rather than a measurement — a clean sweep produces
+no finite estimate, which is why the bracket goes up from there. The two rows
+that do produce estimates straddle the label from either side, and the nine
+draws in twenty games against its own number are what near-parity looks like
+between two engines of similar strength.
+
+So the label is approximately earned, in this specific sense: against
+Stockfish limited to 2000, at this time control, over twenty completed games.
+Those qualifiers are the claim. It is not a FIDE rating and twenty games is a
+small sample.
 
 ## Tests
 
