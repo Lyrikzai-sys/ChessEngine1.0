@@ -134,7 +134,7 @@ a real match series, not an estimate.
 | Berserk, full strength | old top | 50 | 0W–50L | 0.00 |
 | Koivisto, full strength | old top | 52 | 0W–52L | 0.00 |
 
-Berserk and Koivisto are not rating probes. They expose no standardised
+Berserk and Koivisto are not rating probes. They expose no standardized
 strength limit, so they ran at full strength — a few thousand Elo above
 anything here. Losing every game to them is the expected result and says only
 that the engine does not crash or hang against a far stronger opponent.

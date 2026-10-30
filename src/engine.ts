@@ -2,17 +2,17 @@
  * CHESS ENGINE
  * ---------------------------------------------------------------------------
  * Standard legal moves: castling, en passant, promotion, check, checkmate,
- * stalemate, and draws by insufficient material. Threefold repetition and the
- * fifty-move rule are NOT implemented; `halfMoveCount` is tracked but never
- * ends a game. Pure logic with no imports, no DOM and no I/O, which is what
+ * stalemate, and draws by insufficient material, threefold repetition, and the
+ * fifty-move rule. Pure logic with no imports, no DOM and no I/O, which is what
  * lets it run unchanged in a Web Worker and be tested directly.
  *
  * Search is minimax with alpha-beta pruning. Positions are scored on
  * material, per-piece square tables, mobility and check, with captures
  * ordered first so cutoffs do more work. Playing strength is banded by
- * rating-like difficulty bands (700-2000) through search depth and a modelled
- * blunder rate, not depth alone. Those numbers are product controls; they have
- * not been calibrated against rated engines or players.
+ * rating-like difficulty bands (600-2200) through a time budget, a search
+ * ceiling, and a modeled blunder rate, not depth alone. The labels were
+ * calibrated against Stockfish's limited-strength mode; they are
+ * engine-relative estimates, not human Elo ratings.
  * ---------------------------------------------------------------------------
  */
 

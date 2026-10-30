@@ -25,12 +25,12 @@ structural — it touched move kinds, state, `applyMove` and the evaluator, and
 took the file from 973 lines to 650. Perft is what made that strip
 demonstrably safe rather than hopefully safe.
 
-## Rating is modelled, not just depth-limited
+## Rating is modeled, not just depth-limited
 
 A weak engine that simply searches shallower plays like a strong engine with
 less time: still inhuman, just worse. Here a rating sets three things —
 search depth, a blunder rate, and whether the engine reliably knows castling
-and en passant at all. Below 1250 it mostly stumbles into them.
+and en passant at all. Below 800 it mostly stumbles into them.
 
 The result reads as inexperience rather than as a smaller budget.
 
@@ -126,8 +126,10 @@ completed games against the same probe.
 
 What this does not prove: the samples are ten to fifty games at a fast time
 control, and the figure is relative to one engine configuration, not a human
-rating. It shows the collapse is fixed. It does not make the label exact, and
-the top band has not been re-measured since quiescence landed.
+rating. It shows the collapse is fixed. It does not make the label exact. The
+top band was separately re-measured after quiescence: it scored 7W–9D–4L
+(0.575) across twenty completed games against Stockfish limited to 2000,
+which produces an engine-relative estimate of 2053 for that configuration.
 
 The runner lives in `scripts/calibrate.mjs` and never opens the browser game;
 engine strength has nothing to do with the renderer.
@@ -136,7 +138,7 @@ engine strength has nothing to do with the renderer.
 
 No model files ship. Each piece is built by filling a sparse voxel grid in
 code; a culled mesher then emits only the faces that touch air, as indexed
-geometry with per-vertex colour.
+geometry with per-vertex color.
 
 The scene is also lit entirely locally. Drei's `<Environment preset>` looks
 richer, but it downloads an HDR map from a CDN at runtime — which left the
